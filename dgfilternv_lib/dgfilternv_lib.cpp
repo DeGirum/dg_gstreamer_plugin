@@ -63,7 +63,8 @@ DgFilternvCtxInit (DgFilternvInitParams * initParams)
 
     std::cout << "\n\nv1.3\n\nINITIALIZING MODEL with IP ";
     std::cout << server_ip << " and name ";
-    std::cout << modelNameStr << "\n";
+    // std::cout << modelNameStr << "\n";
+    std::cout << ctx->initParams.model_name << "\n";
 
     // TODO: validate model name?
     ctx->model.reset(new DG::AIModel( server_ip, modelNameStr, DG::ModelParamsWriter().InputImgFmt_set( "JPEG" )));

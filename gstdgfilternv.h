@@ -24,6 +24,8 @@
 #ifndef __GST_DGFILTERNV_H__
 #define __GST_DGFILTERNV_H__
 
+#define MAX_LABEL_SIZE 128
+
 #include <gst/base/gstbasetransform.h>
 #include <gst/video/video.h>
 
@@ -108,7 +110,7 @@ struct _GstDgFilternv
   guint gpu_id;
 
   // Model name
-  const char *model_name;
+  char *model_name;
 };
 
 // Boiler plate stuff

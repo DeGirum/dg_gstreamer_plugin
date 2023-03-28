@@ -1,27 +1,3 @@
-################################################################################
-# Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
-#
-# Permission is hereby granted, free of charge, to any person obtaining a
-# copy of this software and associated documentation files (the "Software"),
-# to deal in the Software without restriction, including without limitation
-# the rights to use, copy, modify, merge, publish, distribute, sublicense,
-# and/or sell copies of the Software, and to permit persons to whom the
-# Software is furnished to do so, subject to the following conditions:
-#
-# The above copyright notice and this permission notice shall be included in
-# all copies or substantial portions of the Software.
-#
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
-# THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-# FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-# DEALINGS IN THE SOFTWARE.
-#################################################################################
-#enable this flag to use optimized dgfilternv plugin
-#it can also be exported from command line
-
 WITH_OPENCV?=1
 USE_OPTIMIZED_DGFILTERNV?=0
 CUDA_VER?=11.4
@@ -44,7 +20,8 @@ include_HEADERS+= $(wildcard include/client/*.h)
 LIB:=libnvdsgst_dgfilternv.so
 INCS+=include_HEADERS
 NVDS_VERSION:=6.2
-
+# defines the DEP_FILES variable to hold the path to the dependency files for
+# the dgfilternv_lib library.
 DEP:=dgfilternv_lib/libdgfilternv.a
 
 DEP_FILES-=$(DEP)
@@ -76,21 +53,44 @@ PKGS+= opencv4
 CXXFLAGS+=$(shell pkg-config --cflags $(PKGS))
 LIBS+=$(shell pkg-config --libs $(PKGS))
 
+# This line declares a target all that depends on $(LIB). 
+# When make is invoked with the all target, it will build the library.
 all: $(LIB)
 
+# This is a pattern rule that describes how to build an object file (%.o) 
+# from a C++ source file (%.cpp). The rule depends on the source file, any 
+# header files ($(INCS)), and the Makefile itself. The rule first echoes the
+# value of $(CXXFLAGS), which should be a variable containing compiler flags 
+# like -g or -O2. Then, it invokes the C++ compiler ($(CXX)) to compile the 
+# source file into an object file (-c -o $@), using the compiler flags ($(CXXFLAGS)) 
+# and the first prerequisite ($<, which is the source file itself).
 %.o: %.cpp $(INCS) Makefile
 	@echo $(CXXFLAGS)
 	$(CXX) -c -o $@ $(CXXFLAGS) $<
 
+# This rule describes how to build the library ($(LIB)) from the object 
+# files ($(OBJS)) and any dependencies ($(DEP)) specified in the Makefile. 
+# The rule first echoes the value of $(CXXFLAGS). Then, it invokes the C++ 
+# compiler to link the object files into the library (-o $@), using any library flags ($(LIBS)).
 $(LIB): $(OBJS) $(DEP) Makefile
 	@echo $(CXXFLAGS)
 	$(CXX) -o $@ $(OBJS) $(LIBS)
 
+# This rule specifies a dependency file ($(DEP)) that depends on some other 
+# files ($(DEP_FILES)). When this dependency is needed, make will run the make
+# command in the dgfilternv_lib directory to generate the dependency file.
 $(DEP): $(DEP_FILES) 
 	$(MAKE) -C  dgfilternv_lib/
 
+# This rule describes how to install the library by copying 
+# it to the $(GST_INSTALL_DIR) directory.
 install: $(LIB)
 	cp -rv $(LIB) $(GST_INSTALL_DIR)
 
+# This rule describes how to clean up the object files and 
+# library. When this target is invoked, it removes the object 
+# files ($(OBJS)) and the library ($(LIB)) using the rm command.
+# The -rf flag ensures that any subdirectories created by 
+# the build process are also removed.
 clean:
 	rm -rf $(OBJS) $(LIB)

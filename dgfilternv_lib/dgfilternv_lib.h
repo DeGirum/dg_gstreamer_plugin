@@ -39,7 +39,7 @@ typedef struct
   // height at which frame/object will be scaled
   int processingHeight;
   // model name
-  const char *model_name;
+  char model_name[MAX_LABEL_SIZE];
 } DgFilternvInitParams;
 
 // Detected/Labelled object structure, stores bounding box info along with label

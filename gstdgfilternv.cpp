@@ -187,6 +187,8 @@ gst_dgfilternv_class_init (GstDgFilternvClass * klass)
   g_object_class_install_property (gobject_class, PROP_MODEL_NAME,
       g_param_spec_string ("model_name", "model_name", "Full model name",
           DEFAULT_MODEL_NAME, G_PARAM_READWRITE));
+
+
   g_object_class_install_property (gobject_class, PROP_GPU_DEVICE_ID,
       g_param_spec_uint ("gpu-id",
           "Set GPU Device ID",
@@ -248,8 +250,15 @@ gst_dgfilternv_set_property (GObject * object, guint prop_id,
       dgfilternv->gpu_id = g_value_get_uint (value);
       break;
     case PROP_MODEL_NAME:
-      // First validate the model name?
-      dgfilternv->model_name = g_value_get_string(value);
+      // Don't allow >128 characters!
+      if (strlen(g_value_get_string(value))+1 > 128)
+      {
+        std::cout << "\n\nModel Name is too long! Setting the model to the default value!\n\n";
+        G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+        break;
+      }
+      dgfilternv->model_name = new char[strlen(g_value_get_string(value))+1];
+      strcpy(dgfilternv->model_name, g_value_get_string(value));
       break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
@@ -295,10 +304,12 @@ gst_dgfilternv_start (GstBaseTransform * btrans)
 {
   GstDgFilternv *dgfilternv = GST_DGFILTERNV (btrans);
   NvBufSurfaceCreateParams create_params;
+
   DgFilternvInitParams init_params =
-      { dgfilternv->processing_width, dgfilternv->processing_height,
-    dgfilternv->model_name
+  { dgfilternv->processing_width, dgfilternv->processing_height,
+    ""
   };
+  snprintf(init_params.model_name, 128, dgfilternv->model_name); // Sets the model name
 
   GstQuery *queryparams = NULL;
   guint batch_size = 1;
