@@ -59,10 +59,10 @@ typedef struct
   DgFilternvObject object[50]; // Allocates room for up to 50 objects
 } DgFilternvOutput;
 
-// Initialize library context
+// Initialize library
 DgFilternvCtx * DgFilternvCtxInit (DgFilternvInitParams *init_params);
 
-// Dequeue processed output
+// Process output
 DgFilternvOutput *DgFilternvProcess (DgFilternvCtx *ctx, unsigned char *data);
 
 // Deinitialize library context

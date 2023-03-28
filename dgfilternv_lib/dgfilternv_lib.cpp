@@ -73,8 +73,8 @@ DgFilternvCtxInit (DgFilternvInitParams * initParams)
     return ctx;
 }
 
-// In case of an actual processing library, processing on data will be completed
-// in this function and output will be returned
+// Main process function. Converts input to a cv::Mat and passes jpeg info to the model.
+// Outputs objects in a DgFilternvOutput
 DgFilternvOutput *
 DgFilternvProcess (DgFilternvCtx * ctx, unsigned char *data)
 {

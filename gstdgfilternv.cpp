@@ -39,8 +39,6 @@
 GST_DEBUG_CATEGORY_STATIC (gst_dgfilternv_debug);
 #define GST_CAT_DEFAULT gst_dgfilternv_debug
 #define USE_EGLIMAGE 1
-/* enable to write transformed cvmat to files */
-/* #define DGFILTERNV_DEBUG */
 static GQuark _dsmeta_quark = 0;
 
 /* Enum to identify properties */
@@ -70,8 +68,7 @@ enum
     _errtype; \
   })
 
-
-/* Default values for properties */
+/* DEFAULT PROPERTY VALUES */
 #define DEFAULT_UNIQUE_ID 15
 #define DEFAULT_PROCESSING_WIDTH 512
 #define DEFAULT_PROCESSING_HEIGHT 512
@@ -105,6 +102,8 @@ enum
 /* By default NVIDIA Hardware allocated memory flows through the pipeline. We
  * will be processing on this type of memory only. */
 #define GST_CAPS_FEATURE_MEMORY_NVMM "memory:NVMM"
+
+// Templates for sink and source pad
 static GstStaticPadTemplate gst_dgfilternv_sink_template =
 GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
@@ -121,7 +120,6 @@ GST_STATIC_PAD_TEMPLATE ("src",
         (GST_CAPS_FEATURE_MEMORY_NVMM,
             "{ NV12, RGBA, I420 }")));
 
-/* Define our element type. Standard GObject/GStreamer boilerplate stuff */
 #define gst_dgfilternv_parent_class parent_class
 G_DEFINE_TYPE (GstDgFilternv, gst_dgfilternv, GST_TYPE_BASE_TRANSFORM);
 
@@ -129,23 +127,16 @@ static void gst_dgfilternv_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec);
 static void gst_dgfilternv_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec);
-
 static gboolean gst_dgfilternv_set_caps (GstBaseTransform * btrans,
     GstCaps * incaps, GstCaps * outcaps);
 static gboolean gst_dgfilternv_start (GstBaseTransform * btrans);
 static gboolean gst_dgfilternv_stop (GstBaseTransform * btrans);
-
 static GstFlowReturn gst_dgfilternv_transform_ip (GstBaseTransform *
     btrans, GstBuffer * inbuf);
-
 static void
 attach_metadata_full_frame (GstDgFilternv * dgfilternv, NvDsFrameMeta *frame_meta,
     gdouble scale_ratio, DgFilternvOutput * output, guint batch_id);
-
-/* Install properties, set sink and src pad capabilities, override the required
- * functions of the base class, These are common to all instances of the
- * element.
- */
+// Installs the object and BaseTransform properties along with pads
 static void
 gst_dgfilternv_class_init (GstDgFilternvClass * klass)
 {
@@ -217,17 +208,12 @@ gst_dgfilternv_class_init (GstDgFilternvClass * klass)
       "Uses NVIDIA's 3rdparty algorithm wrapper to process video frames",
       "Stephan Sokolov < stephan@degirum.ai >");
 }
-
+// Initialize the element. Set the BaseTransform properties to work in in-place mode
 static void
 gst_dgfilternv_init (GstDgFilternv * dgfilternv)
 {
   GstBaseTransform *btrans = GST_BASE_TRANSFORM (dgfilternv);
-
-  /* We will not be generating a new buffer. Just adding / updating
-   * metadata. */
   gst_base_transform_set_in_place (GST_BASE_TRANSFORM (btrans), TRUE);
-  /* We do not want to change the input caps. Set to passthrough. transform_ip
-   * is still called. */
   gst_base_transform_set_passthrough (GST_BASE_TRANSFORM (btrans), TRUE);
 
   /* Initialize all property variables to default values */
@@ -242,9 +228,7 @@ gst_dgfilternv_init (GstDgFilternv * dgfilternv)
   if (!_dsmeta_quark)
     _dsmeta_quark = g_quark_from_static_string (NVDS_META_STRING);
 }
-
-/* Function called when a property of the element is set. Standard boilerplate.
- */
+// Set property function
 static void
 gst_dgfilternv_set_property (GObject * object, guint prop_id,
     const GValue * value, GParamSpec * pspec)
@@ -273,9 +257,7 @@ gst_dgfilternv_set_property (GObject * object, guint prop_id,
   }
 }
 
-/* Function called when a property of the element is requested. Standard
- * boilerplate.
- */
+// Get property function
 static void
 gst_dgfilternv_get_property (GObject * object, guint prop_id,
     GValue * value, GParamSpec * pspec)
@@ -305,7 +287,8 @@ gst_dgfilternv_get_property (GObject * object, guint prop_id,
 }
 
 /**
- * Initialize all resources and start the output thread
+ * Initialize all the parameters and CUDA stream.
+ * Called as a result of BaseTransform class changing states in pipeline
  */
 static gboolean
 gst_dgfilternv_start (GstBaseTransform * btrans)
@@ -410,9 +393,7 @@ error:
   return FALSE;
 }
 
-/**
- * Stop the output thread and free up all the resources
- */
+// Stop the element, free memory, deinitialize our library
 static gboolean
 gst_dgfilternv_stop (GstBaseTransform * btrans)
 {
@@ -602,10 +583,6 @@ get_converted_mat (GstDgFilternv * dgfilternv, NvBufSurface *input_buf, gint idx
     }
 #endif
   }
-
-  /* We will first convert only the Region of Interest (the entire frame or the
-   * object bounding box) to RGB and then scale the converted RGB frame to
-   * processing resolution. */
   return GST_FLOW_OK;
 
 error:
@@ -613,7 +590,8 @@ error:
 }
 
 /**
- * Called when element recieves an input buffer from upstream element.
+ * BaseTransform main processing function, called when input buffer received.
+ * Transform the buffer in-place, using our static library
  */
 static GstFlowReturn
 gst_dgfilternv_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
@@ -693,7 +671,7 @@ error:
 }
 
 /**
- * Attach metadata for the full frame. We will be adding new metadata.
+ * Attach metadata for the processed video frame, using NvDsBatch Meta
  */
 static void
 attach_metadata_full_frame (GstDgFilternv * dgfilternv, NvDsFrameMeta *frame_meta,
@@ -758,9 +736,7 @@ attach_metadata_full_frame (GstDgFilternv * dgfilternv, NvDsFrameMeta *frame_met
   }
 }
 
-/**
- * Boiler plate for registering a plugin and an element.
- */
+// Register everything in the plugin
 static gboolean
 dgfilternv_plugin_init (GstPlugin * plugin)
 {
