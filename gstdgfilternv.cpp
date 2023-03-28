@@ -223,7 +223,7 @@ gst_dgfilternv_init (GstDgFilternv * dgfilternv)
   dgfilternv->processing_width = DEFAULT_PROCESSING_WIDTH;
   dgfilternv->processing_height = DEFAULT_PROCESSING_HEIGHT;
   dgfilternv->gpu_id = DEFAULT_GPU_ID;
-  dgfilternv->model_name = DEFAULT_MODEL_NAME;
+  dgfilternv->model_name = const_cast<char*>(DEFAULT_MODEL_NAME);
 
   /* This quark is required to identify NvDsMeta when iterating through
    * the buffer metadatas */
@@ -309,13 +309,12 @@ gst_dgfilternv_start (GstBaseTransform * btrans)
   { dgfilternv->processing_width, dgfilternv->processing_height,
     ""
   };
-  snprintf(init_params.model_name, 128, dgfilternv->model_name); // Sets the model name
+  snprintf(init_params.model_name, 128, "%s", dgfilternv->model_name); // Sets the model name
 
   GstQuery *queryparams = NULL;
   guint batch_size = 1;
   int val = -1;
 
-  /* Algorithm specific initializations and resource allocation. */
   dgfilternv->dgfilternvlib_ctx = DgFilternvCtxInit (&init_params);
 
   GST_DEBUG_OBJECT (dgfilternv, "ctx lib %p \n", dgfilternv->dgfilternvlib_ctx);
@@ -325,7 +324,9 @@ gst_dgfilternv_start (GstBaseTransform * btrans)
 
   cudaDeviceGetAttribute (&val, cudaDevAttrIntegrated, dgfilternv->gpu_id);
   dgfilternv->is_integrated = val;
-
+  
+  // queries the batch size of the input buffers from the upstream element and
+  // sets the batch size for the plugin accordingly
   dgfilternv->batch_size = 1;
   queryparams = gst_nvquery_batch_size_new ();
   if (gst_pad_peer_query (GST_BASE_TRANSFORM_SINK_PAD (btrans), queryparams)
@@ -460,6 +461,14 @@ error:
  * ratio. Remove the padding required by hardware and convert from RGBA to RGB
  * using openCV. These steps can be skipped if the algorithm can work with
  * padded data and/or can work with RGBA.
+ *
+ * The input NvBufSurface object is modified in-place to contain the output
+ * buffer. The function uses NVIDIA's NvBufSurfTransform API to perform
+ * scaling, format conversion, and cropping, as well as OpenCV's cvtColor
+ * function to convert the RGBA format to BGR format. The input buffer is
+ * cropped according to the provided crop_rect_params rectangle, and the aspect
+ * ratio is maintained while scaling to a destination resolution specified by
+ * processing_width and processing_height parameters of dgfilternv structure.
  */
 static GstFlowReturn
 get_converted_mat (GstDgFilternv * dgfilternv, NvBufSurface *input_buf, gint idx,
@@ -607,6 +616,8 @@ error:
 static GstFlowReturn
 gst_dgfilternv_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
 {
+  // retrieves the GstDgFilternv object from the GstBaseTransform object and
+  // initializes NVIDIA buffer and metadata variables.
   GstDgFilternv *dgfilternv = GST_DGFILTERNV (btrans);
   GstMapInfo in_map_info;
   GstFlowReturn flow_ret = GST_FLOW_ERROR;
@@ -623,12 +634,14 @@ gst_dgfilternv_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
   CHECK_CUDA_STATUS (cudaSetDevice (dgfilternv->gpu_id),
       "Unable to set cuda device");
 
+  // maps the input buffer to get the input NvBufSurface. The function then
+  // checks the NvBufSurface to ensure it is valid and that the memory is
+  // allocated on the correct GPU
   memset (&in_map_info, 0, sizeof (in_map_info));
   if (!gst_buffer_map (inbuf, &in_map_info, GST_MAP_READ)) {
     g_print ("Error: Failed to map gst buffer\n");
     goto error;
   }
-
   nvds_set_input_system_timestamp (inbuf, GST_ELEMENT_NAME (dgfilternv));
   surface = (NvBufSurface *) in_map_info.data;
   GST_DEBUG_OBJECT (dgfilternv,
@@ -638,12 +651,17 @@ gst_dgfilternv_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
   if (CHECK_NVDS_MEMORY_AND_GPUID (dgfilternv, surface))
     goto error;
 
+  // retrieves the NvDsBatchMeta from the input buffer and processes each
+  // NvDsFrameMeta in the batch
   batch_meta = gst_buffer_get_nvds_batch_meta (inbuf);
   if (batch_meta == nullptr) {
     GST_ELEMENT_ERROR (dgfilternv, STREAM, FAILED,
         ("NvDsBatchMeta not found for input buffer."), (NULL));
     return GST_FLOW_ERROR;
   }
+
+  // sets the scaling parameters for the frame and scales and converts the
+  // frame using the get_converted_mat function
   for (l_frame = batch_meta->frame_meta_list; l_frame != NULL;
     l_frame = l_frame->next)
   {
@@ -662,14 +680,16 @@ gst_dgfilternv_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
           dgfilternv->video_info.height) != GST_FLOW_OK) {
       goto error;
     }
-
-    /* Process to get the output */
+    // processes the frame using the DgFilternvProcess function and attaches
+    // the metadata for the full frame
     output =
         DgFilternvProcess (dgfilternv->dgfilternvlib_ctx,
         dgfilternv->cvmat->data);
     /* Attach the metadata for the full frame */
     attach_metadata_full_frame (dgfilternv, frame_meta, scale_ratio, output, i);
     i++;
+
+    // frees the output and returns the GstFlowReturn
     free (output);
   }
   flow_ret = GST_FLOW_OK;

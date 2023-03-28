@@ -108,7 +108,6 @@ DgFilternvProcess (DgFilternvCtx * ctx, unsigned char *data)
         frameMat.release();
     }
     // Parse the json output, fill output structure using processed output
-    out->numObjects = 0; // not necessary due to calloc? 
     json_ld resp = response;
     if (strcmp(resp.type_name(),"array") == 0 && response.dump() != "[]"){
         // Iterate over all of the detected objects
