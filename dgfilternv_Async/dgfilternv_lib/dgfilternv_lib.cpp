@@ -61,11 +61,11 @@ DgFilternvCtxInit (DgFilternvInitParams * initParams)
     out.reset((DgFilternvOutput*)calloc (1, sizeof (DgFilternvOutput)));
 
     // TODO: change server ip to be a property? or modelparams
-    const std::string server_ip = "100.122.112.76";
+    const std::string serverIP = ctx->initParams.server_ip;
     std::string modelNameStr = ctx->initParams.model_name;
 
     std::cout << "\nv1.4\nINITIALIZING MODEL with IP ";
-    std::cout << server_ip << " and name ";
+    std::cout << serverIP << " and name ";
     std::cout << ctx->initParams.model_name << "\n";
 
     auto callback = [ ctx ]( const json &response, const std::string &fr)
@@ -103,7 +103,7 @@ DgFilternvCtxInit (DgFilternvInitParams * initParams)
         // Now, all of the detected objects in the frame are inside the out struct
     };
 
-    ctx->model.reset(new DG::AIModelAsync( server_ip, modelNameStr, callback));
+    ctx->model.reset(new DG::AIModelAsync( serverIP, modelNameStr, callback));
 
     std::cout << "\nMODEL SUCCESSFULLY INITIALIZED\n\n";
 

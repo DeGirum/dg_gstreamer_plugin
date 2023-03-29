@@ -49,6 +49,7 @@ enum
   PROP_PROCESSING_WIDTH,
   PROP_PROCESSING_HEIGHT,
   PROP_MODEL_NAME,
+  PROP_SERVER_IP,
   PROP_GPU_DEVICE_ID
 };
 
@@ -74,6 +75,7 @@ enum
 #define DEFAULT_PROCESSING_HEIGHT 512
 #define DEFAULT_GPU_ID 0
 #define DEFAULT_MODEL_NAME "yolo_v5s_coco--512x512_quant_n2x_orca_1"
+#define DEFAULT_SERVER_IP "100.122.112.76"
 
 #define RGB_BYTES_PER_PIXEL 3
 #define RGBA_BYTES_PER_PIXEL 4
@@ -188,6 +190,9 @@ gst_dgfilternv_class_init (GstDgFilternvClass * klass)
       g_param_spec_string ("model_name", "model_name", "Full model name",
           DEFAULT_MODEL_NAME, G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, PROP_SERVER_IP,
+      g_param_spec_string ("server_ip", "server_ip", "Full server IP",
+          DEFAULT_SERVER_IP, G_PARAM_READWRITE));
 
   g_object_class_install_property (gobject_class, PROP_GPU_DEVICE_ID,
       g_param_spec_uint ("gpu-id",
@@ -224,6 +229,7 @@ gst_dgfilternv_init (GstDgFilternv * dgfilternv)
   dgfilternv->processing_height = DEFAULT_PROCESSING_HEIGHT;
   dgfilternv->gpu_id = DEFAULT_GPU_ID;
   dgfilternv->model_name = const_cast<char*>(DEFAULT_MODEL_NAME);
+  dgfilternv->server_ip = const_cast<char*>(DEFAULT_SERVER_IP);
 
   /* This quark is required to identify NvDsMeta when iterating through
    * the buffer metadatas */
@@ -260,6 +266,17 @@ gst_dgfilternv_set_property (GObject * object, guint prop_id,
       dgfilternv->model_name = new char[strlen(g_value_get_string(value))+1];
       strcpy(dgfilternv->model_name, g_value_get_string(value));
       break;
+    case PROP_SERVER_IP:
+      // Don't allow >128 characters!
+      if (strlen(g_value_get_string(value))+1 > 128)
+      {
+        std::cout << "\n\nServer IP is too long! Setting the server ip to the default value!\n\n";
+        G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+        break;
+      }
+      dgfilternv->server_ip = new char[strlen(g_value_get_string(value))+1];
+      strcpy(dgfilternv->server_ip, g_value_get_string(value));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -289,6 +306,9 @@ gst_dgfilternv_get_property (GObject * object, guint prop_id,
     case PROP_MODEL_NAME:
       g_value_set_string(value, dgfilternv->model_name);
       break;
+    case PROP_SERVER_IP:
+      g_value_set_string(value, dgfilternv->server_ip);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -307,9 +327,10 @@ gst_dgfilternv_start (GstBaseTransform * btrans)
 
   DgFilternvInitParams init_params =
   { dgfilternv->processing_width, dgfilternv->processing_height,
-    ""
+    "", ""
   };
   snprintf(init_params.model_name, 128, "%s", dgfilternv->model_name); // Sets the model name
+  snprintf(init_params.server_ip, 128, "%s", dgfilternv->server_ip); // Sets the model name
 
   GstQuery *queryparams = NULL;
   guint batch_size = 1;

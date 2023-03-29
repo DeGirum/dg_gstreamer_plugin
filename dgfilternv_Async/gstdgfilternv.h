@@ -111,6 +111,9 @@ struct _GstDgFilternv
 
   // Model name
   char *model_name;
+
+  // Server IP
+  char *server_ip;
 };
 
 // Boiler plate stuff

@@ -40,6 +40,8 @@ typedef struct
   int processingHeight;
   // model name
   char model_name[MAX_LABEL_SIZE];
+  // server ip
+  char server_ip[MAX_LABEL_SIZE];
 } DgFilternvInitParams;
 
 // Detected/Labelled object structure, stores bounding box info along with label
