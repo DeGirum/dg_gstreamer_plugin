@@ -1,2 +1,0 @@
-/usr/bin/ar qc /home/stephan/Documents/Dev/CppSDK/bin/libaiclientlib.a CMakeFiles/aiclientlib.dir/client/dg_client.cpp.o CMakeFiles/aiclientlib.dir/client/dg_model_api.cpp.o
-/usr/bin/ranlib /home/stephan/Documents/Dev/CppSDK/bin/libaiclientlib.a
