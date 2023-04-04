@@ -19,12 +19,14 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
+ * 
  */
 
 #ifndef __DGFILTERNV_LIB__
 #define __DGFILTERNV_LIB__
 
 #define MAX_LABEL_SIZE 128
+#define MAX_OBJ_PER_FRAME 35
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -58,7 +60,7 @@ typedef struct
 typedef struct
 {
   int numObjects;
-  DgFilternvObject object[50]; // Allocates room for up to 50 objects
+  DgFilternvObject object[MAX_OBJ_PER_FRAME]; // Allocates room for MAX_OBJ_PER_FRAME objects
 } DgFilternvOutput;
 
 // Initialize library

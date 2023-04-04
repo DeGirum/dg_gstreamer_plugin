@@ -1,5 +1,7 @@
 WITH_OPENCV?=1
 USE_OPTIMIZED_DGFILTERNV?=0
+# Set the CUDA Version of your system here:
+# It is found by inspecting the directory name of your CUDA installation
 CUDA_VER?=11.4
 ifeq ($(CUDA_VER),)
   $(error "CUDA_VER is not set")

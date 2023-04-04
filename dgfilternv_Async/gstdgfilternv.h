@@ -19,6 +19,9 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
+ * 
+ * This software contains source code provided by NVIDIA Corporation.
+ *
  */
 
 #ifndef __GST_DGFILTERNV_H__
@@ -48,9 +51,9 @@
 
 /* Package and library details required for plugin_init */
 #define PACKAGE "dgfilternv"
-#define VERSION "1.3"
+#define VERSION "1.0"
 #define LICENSE "LGPL"
-#define DESCRIPTION "This plugin is for pipelines that connect to DeGirum's AI inference model."
+#define DESCRIPTION "This plugin is for pipelines that connect to DeGirum's AI inference models."
 #define BINARY_PACKAGE "NVIDIA DeepStream 3rdparty IP integration"
 #define URL "http://degirum.ai/"
 

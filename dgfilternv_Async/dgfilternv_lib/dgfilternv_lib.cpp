@@ -19,6 +19,7 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
+ *
  */
 
 #include "dgfilternv_lib.h"
@@ -42,16 +43,18 @@
 
 using json_ld = nlohmann::basic_json<std::map, std::vector, std::string, bool,
                                      std::int64_t, std::uint64_t, long double>;
-
+// Smart pointer for an output struct
 std::unique_ptr<DgFilternvOutput> out;
-
+// Context for the plugin, holds initParams for the model 
+// and a smart pointer to the model
 struct DgFilternvCtx
 {
     DgFilternvInitParams initParams;
     std::unique_ptr<DG::AIModelAsync> model;
 };
 
-// Initialize our library
+// Initializes the model with the given initParams.
+// Sets the callback function for asynchronous operation of inference.
 DgFilternvCtx *
 DgFilternvCtxInit (DgFilternvInitParams * initParams)
 {
@@ -60,7 +63,6 @@ DgFilternvCtxInit (DgFilternvInitParams * initParams)
     // Initialize the out struct, containing frame objects data
     out.reset((DgFilternvOutput*)calloc (1, sizeof (DgFilternvOutput)));
 
-    // TODO: change server ip to be a property? or modelparams
     const std::string serverIP = ctx->initParams.server_ip;
     std::string modelNameStr = ctx->initParams.model_name;
 
@@ -123,16 +125,15 @@ DgFilternvProcess (DgFilternvCtx * ctx, unsigned char *data)
         cv::Mat frameMat(ctx->initParams.processingHeight, ctx->initParams.processingWidth, CV_8UC3, data );
         // (Usually is square) We can now pass it to the AI Model.
         
-        // Decode this mat into a jpeg buffer vector.
+        // encode this mat into a jpeg buffer vector.
         std::vector<int> param(2);
         param[0] = cv::IMWRITE_JPEG_QUALITY;
-        param[1] = 90;
+        param[1] = 85;
         std::vector<unsigned char> ubuff = {};
         // The function imencode compresses the image and stores it in the memory buffer that is resized to fit the result.
         cv::imencode(".jpeg", frameMat, ubuff, param);
         // Pass to the model.
-        std::vector<char> buff (ubuff.begin(),ubuff.end());
-        std::vector<std::vector<char>> frameVect = { buff };
+        std::vector<std::vector<char>> frameVect {std::vector<char>(ubuff.begin(), ubuff.end())};
         ctx->model->predict(frameVect, ""); // Call the predict function
         
         // Debug: can output an image of the frame

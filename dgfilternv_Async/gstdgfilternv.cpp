@@ -19,13 +19,9 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
- *
- * <refsect2>
- * <title>Example launch line</title>
- * |[
- * gst-launch-1.0 filesrc location=<video file path> ! qtdemux ! h264parse ! nvv4l2decoder ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! nvvideoconvert ! queue ! dgfilternv ! queue ! nvdsosd ! nvegltransform ! nveglglessink
- * ]|
- * </refsect2>
+ * 
+ * This software contains source code provided by NVIDIA Corporation.
+ * 
  */
 
 #include <string.h>
