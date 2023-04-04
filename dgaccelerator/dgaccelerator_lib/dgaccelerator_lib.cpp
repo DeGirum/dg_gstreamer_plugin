@@ -66,7 +66,7 @@ DgAcceleratorCtxInit (DgAcceleratorInitParams * initParams)
     const std::string serverIP = ctx->initParams.server_ip;
     std::string modelNameStr = ctx->initParams.model_name;
 
-    std::cout << "\nv1.4\nINITIALIZING MODEL with IP ";
+    std::cout << "\n\nINITIALIZING MODEL with IP ";
     std::cout << serverIP << " and name ";
     std::cout << ctx->initParams.model_name << "\n";
 
