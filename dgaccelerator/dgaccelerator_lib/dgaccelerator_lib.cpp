@@ -70,6 +70,19 @@ DgAcceleratorCtxInit (DgAcceleratorInitParams * initParams)
     std::cout << serverIP << " and name ";
     std::cout << ctx->initParams.model_name << "\n";
 
+    // Validate model name here:
+    std::vector<DG::ModelInfo> modelList;
+    DG::modelzooListGet( serverIP, modelList );
+
+    auto model_id = DG::modelFind( serverIP, { modelNameStr } );
+    if( model_id.name.empty() ){
+        std::cout << "Model '" + modelNameStr + "' is not found in model zoo";
+        std::cout << "\nAvailable models:\n\n";
+        for( auto m : modelList )
+            std::cout << m.name << ", WxH: " << m.W << "x" << m.H << "\n";
+        throw std::runtime_error( "Model '" + modelNameStr + "' is not found in model zoo" );
+    }
+
     auto callback = [ ctx ]( const json &response, const std::string &fr)
     {
         // Reset the output struct:
