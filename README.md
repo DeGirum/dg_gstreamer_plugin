@@ -23,15 +23,16 @@ t. ! queue ! dgfilternv server_ip=<server-ip> model_name=<model-name> ! queue ! 
 gst-launch-1.0 filesrc location=<video-file-1-location> ! qtdemux ! queue ! h264parse ! nvv4l2decoder enable-max-performance=1 ! queue ! m.sink_0 nvstreammux name=m batch-size=2 width=1920 height=1080 ! dgfilternv server_ip=<server-ip> model_name=<model-name> ! nvmultistreamtiler width=1920 height=1080 buffer-pool-size=4 ! queue ! nvdsosd process-mode=1 ! nvegltransform ! nveglglessink \
 filesrc location=<video-file-2-location> ! qtdemux ! queue ! h264parse ! nvv4l2decoder enable-max-performance=1 ! queue ! m.sink_1
 ```
-This plugin requires a [DeepStream installation] and a [GStreamer installation].
+This plugin requires a [DeepStream installation], a [GStreamer installation], and an [OpenCV installation].
 
-| Plugin | Required Version |
+| Package | Required Version |
 | ------ | ------ |
 | DeepStream | 6.2+ |
 | GStreamer | 1.16.3+ |
-
+| OpenCV | 4+ |
 
 
 [DeepStream Plugin Guide]:<https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_plugin_Intro.html>
 [DeepStream installation]:<https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_Quickstart.html>
 [GStreamer installation]:<https://gstreamer.freedesktop.org/documentation/installing/index.html>
+[OpenCV installation]:<https://docs.opencv.org/4.x/d7/d9f/tutorial_linux_install.html>
