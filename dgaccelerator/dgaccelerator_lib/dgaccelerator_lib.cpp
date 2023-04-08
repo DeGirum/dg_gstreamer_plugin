@@ -37,14 +37,28 @@
 #include "opencv2/imgproc/imgproc.hpp"
 #include "opencv2/highgui/highgui.hpp"
 #include "../include/Utilities/dg_file_utilities.h"
+#include "../include/Utilities/dg_tracing_facility.h"
 #include "../include/DglibInterface/dg_model_api.h"
 #include "../include/client/dg_client.h"
 #include "../include/json.hpp"
 
+
+DG_TRC_GROUP_DEF(DgAcceleratorLib)
+
 using json_ld = nlohmann::basic_json<std::map, std::vector, std::string, bool,
                                      std::int64_t, std::uint64_t, long double>;
-// Smart pointer for an output struct
-std::unique_ptr<DgAcceleratorOutput> out;
+
+int NUM_INPUT_STREAMS;                  // Number of input streams
+int RING_BUFFER_SIZE;                   // Size of circular queue of output objects
+std::vector<DgAcceleratorOutput*> out;  // Vector of pointers to output structs, for circular buffer implementation
+unsigned int curIndex;                  // circular buffer index implementation
+
+size_t diff = 0;                        // Counter for # of frames waiting for callback at any given moment
+size_t framesProcessed = 0;             // Frame count for FPS calculation, careful with uint overflow...
+
+// Clock for counting total duration
+std::chrono::time_point<std::chrono::high_resolution_clock> start_time;
+
 // Context for the plugin, holds initParams for the model 
 // and a smart pointer to the model
 struct DgAcceleratorCtx
@@ -60,40 +74,62 @@ DgAcceleratorCtxInit (DgAcceleratorInitParams * initParams)
 {
     DgAcceleratorCtx *ctx = (DgAcceleratorCtx *) calloc (1, sizeof (DgAcceleratorCtx));
     ctx->initParams = *initParams;
-    // Initialize the out struct, containing frame objects data
-    out.reset((DgAcceleratorOutput*)calloc (1, sizeof (DgAcceleratorOutput)));
+    // Initialize number of input streams
+    NUM_INPUT_STREAMS = initParams->numInputStreams;
+    // Set the ring buffer size
+    RING_BUFFER_SIZE = 2 * NUM_INPUT_STREAMS; // 2x the number of input streams works best
+    
+    // Initialize the vector of output objects.
+    out.resize(RING_BUFFER_SIZE);
+    for (auto& elem : out) {
+        elem = (DgAcceleratorOutput*)calloc (1, sizeof (DgAcceleratorOutput));
+    }
+    // Initialize curIndex
+    curIndex = 0;
 
     const std::string serverIP = ctx->initParams.server_ip;
     std::string modelNameStr = ctx->initParams.model_name;
-
     std::cout << "\n\nINITIALIZING MODEL with IP ";
     std::cout << serverIP << " and name ";
     std::cout << ctx->initParams.model_name << "\n";
 
-    // Validate model name here:
-    std::vector<DG::ModelInfo> modelList;
-    DG::modelzooListGet( serverIP, modelList );
+    DG::ModelParamsWriter mparams; // Model Parameters writer to pass to the model
 
-    auto model_id = DG::modelFind( serverIP, { modelNameStr } );
-    if( model_id.name.empty() ){
-        std::cout << "Model '" + modelNameStr + "' is not found in model zoo";
-        std::cout << "\nAvailable models:\n\n";
-        for( auto m : modelList )
-            std::cout << m.name << ", WxH: " << m.W << "x" << m.H << "\n";
-        throw std::runtime_error( "Model '" + modelNameStr + "' is not found in model zoo" );
+    // Validate model name here:
+    if(modelNameStr.find('/') == std::string::npos) // Check if requesting a local model
+    {
+        std::vector<DG::ModelInfo> modelList;
+        DG::modelzooListGet( serverIP, modelList );
+        auto model_id = DG::modelFind( serverIP, { modelNameStr } );
+        if( model_id.name.empty() ){
+            std::cout << "Model '" + modelNameStr + "' is not found in model zoo";
+            std::cout << "\nAvailable models:\n\n";
+            for( auto m : modelList )
+                std::cout << m.name << ", WxH: " << m.W << "x" << m.H << "\n";
+            throw std::runtime_error( "Model '" + modelNameStr + "' is not found in model zoo" );
+        }
+    }
+    else // Cloud model requested, set the token in model params
+    {
+        mparams.CloudToken_set( initParams->cloud_token );
     }
 
+    // Callback function for parsing the model inference data for a frame
     auto callback = [ ctx ]( const json &response, const std::string &fr)
-    {
+    {        
+        DG_TRC_BLOCK(DgAcceleratorLib, callback, DGTrace::lvlBasic);
+
+        unsigned int index = std::stoi(fr); // Index of the Output struct to fill
         // Reset the output struct:
-        std::memset(out.get(), 0, sizeof(DgAcceleratorObject));
+        std::memset(out[index], 0, sizeof(DgAcceleratorObject));
+        // out->numObjects = 0;
 
         // Parse the json output, fill output structure using processed output
         json_ld resp = response;
         if (strcmp(resp.type_name(),"array") == 0 && response.dump() != "[]"){
             // Iterate over all of the detected objects
             for(int i = 0; i < resp.size(); i++){
-                out->numObjects++;
+                out[index]->numObjects++;
                 json_ld newresp = resp[i]; // Output from model is a json array, so convert to single element
                 std::vector<long double> bbox = newresp["bbox"].get<std::vector<long double>>();
                 std::string label = newresp["label"];
@@ -101,7 +137,7 @@ DgAcceleratorCtxInit (DgAcceleratorInitParams * initParams)
                 long double score = newresp["score"].get<long double>();
                 // std::cout << label << " " << category_id << " " << score;
                 // std::cout << " " << bbox[0]<< " "<< bbox[1]<< " "<< bbox[2]<< " "<< bbox[3] << "\n";
-                out->object[i] = (DgAcceleratorObject)
+                out[index]->object[i] = (DgAcceleratorObject)
                 {
                     std::roundf(bbox[0]),           // left
                     std::roundf(bbox[1]),           // top
@@ -109,28 +145,49 @@ DgAcceleratorCtxInit (DgAcceleratorInitParams * initParams)
                     std::roundf(bbox[3] - bbox[1]), // height
                     ""                              // label, must be of type char[]
                 };
-                snprintf(out->object[i].label, 64, "%s", label.c_str()); // Sets the label
+                snprintf(out[index]->object[i].label, 64, "%s", label.c_str()); // Sets the label
             }
         }
         else if (strcmp(resp.type_name(),"object") == 0) { // Model gave a bad result
           std::cout << response.dump() << "\n\n";
         }
         // Now, all of the detected objects in the frame are inside the out struct
+        // std::cout << "Finished work on object with frame index: " << index << "\n";
+        
+        framesProcessed++;
+        diff--; // Decrement # of frames waiting to be processed
     };
 
-    ctx->model.reset(new DG::AIModelAsync( serverIP, modelNameStr, callback));
+    // Initialize the model with the parameters
+    ctx->model.reset(new DG::AIModelAsync( serverIP, modelNameStr, callback, mparams, 48u));
 
     std::cout << "\nMODEL SUCCESSFULLY INITIALIZED\n\n";
-
+    
+    // Start the clock for counting total duration
+    start_time = std::chrono::high_resolution_clock::now();
+    
     return ctx;
 }
 
 
 // Main process function. Converts input to a cv::Mat and passes jpeg info to the model.
-// Outputs objects in a DgAcceleratorOutput
+// Gets called for each frame, outputs objects in a DgAcceleratorOutput
 DgAcceleratorOutput *
 DgAcceleratorProcess (DgAcceleratorCtx * ctx, unsigned char *data)
 {
+    DG_TRC_BLOCK(DgAcceleratorLib, DgAcceleratorProcess, DGTrace::lvlBasic);
+
+    diff++; // Increment # of frames waiting to be processed
+
+    // Immediately need to add to curIndex so that the circular buffer can keep going
+    // Wrap around RING_BUFFER_SIZE for circular buffer implementation
+    curIndex %= RING_BUFFER_SIZE;
+    int curFrameIndex = curIndex++;
+    
+    // Frame skip implementation:
+    if (diff > NUM_INPUT_STREAMS * 3 ) // if NUM_INPUT_STREAMS * 3 frames behind
+        goto skip;
+
     if (data != NULL) // Process the data
     {
         // Data is a pointer to a cv::Mat.
@@ -139,27 +196,53 @@ DgAcceleratorProcess (DgAcceleratorCtx * ctx, unsigned char *data)
         // (Usually is square) We can now pass it to the AI Model.
         
         // encode this mat into a jpeg buffer vector.
-        std::vector<int> param(2);
-        param[0] = cv::IMWRITE_JPEG_QUALITY;
-        param[1] = 85;
+        std::vector<int> param = {cv::IMWRITE_JPEG_QUALITY, 85};
         std::vector<unsigned char> ubuff = {};
+
         // The function imencode compresses the image and stores it in the memory buffer that is resized to fit the result.
-        cv::imencode(".jpeg", frameMat, ubuff, param);
+        {
+            DG_TRC_BLOCK(DgAcceleratorLib, DgAcceleratorProcess:imencode, DGTrace::lvlBasic);
+            cv::imencode(".jpeg", frameMat, ubuff, param);
+        }
+
         // Pass to the model.
         std::vector<std::vector<char>> frameVect {std::vector<char>(ubuff.begin(), ubuff.end())};
-        ctx->model->predict(frameVect, ""); // Call the predict function
-        
-        // Debug: can output an image of the frame
-        // cv::imwrite("../../../../../../../../home/degirum/Documents/testoutput.jpeg", frameMat);
+        ctx->model->predict(frameVect, std::to_string(curFrameIndex)); // Call the predict function
+        // This passes the data buffer and the current frame output object index to work on
+
+        // Uncomment this to turn on sequential mode
+        // ctx->model->waitCompletion();
+
         frameMat.release();
     }
-    return out.get();
+    // std::cout << "Returning object with current frame index: " << curFrameIndex << "\n";
+    return out[curFrameIndex];
+
+    skip:
+        diff--;
+        std::cout << "Skipping frame due to diff of " << diff << "\n";
+        std::cout << "If this happens too often, lower the incoming framerate of streams and/or the number of streams!\n";
+        return (DgAcceleratorOutput*)calloc (1, sizeof (DgAcceleratorOutput));
 }
 
+// Deinitialize function, called when element stops processing
 void
 DgAcceleratorCtxDeinit (DgAcceleratorCtx * ctx)
 {
-    std::cout << "\nD E I N I T I A L I Z I N G \n\n\n";
+    std::cout << "\nDeinitializing model.\n\n\n";
+    std::cout<<"\nDIFF: " << diff << "\n";
+
+    // Calculate FPS
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    std::cout << "Frames processed / duration (FPS) :" << 1000 * ((long double) framesProcessed / duration.count());
+
+    // Reset our model
     ctx->model.reset();
     free (ctx);
+    // Free output objects
+    for (auto& elem : out) {
+        delete elem;
+        elem = nullptr;
+    }
 }

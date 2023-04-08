@@ -32,10 +32,15 @@
 #include <fstream>
 #include "gstdgaccelerator.h"
 #include <sys/time.h>
+#include "include/Utilities/dg_tracing_facility.h"
+
 GST_DEBUG_CATEGORY_STATIC (gst_dgaccelerator_debug);
 #define GST_CAT_DEFAULT gst_dgaccelerator_debug
 #define USE_EGLIMAGE 1
 static GQuark _dsmeta_quark = 0;
+
+DG_TRC_GROUP_DEF(DgAccelerator)
+
 
 /* Enum to identify properties */
 enum
@@ -46,6 +51,7 @@ enum
   PROP_PROCESSING_HEIGHT,
   PROP_MODEL_NAME,
   PROP_SERVER_IP,
+  PROP_CLOUD_TOKEN,
   PROP_GPU_DEVICE_ID
 };
 
@@ -72,6 +78,7 @@ enum
 #define DEFAULT_GPU_ID 0
 #define DEFAULT_MODEL_NAME "yolo_v5s_coco--512x512_quant_n2x_orca_1"
 #define DEFAULT_SERVER_IP "100.122.112.76"
+#define DEFAULT_CLOUD_TOKEN ""
 
 #define RGB_BYTES_PER_PIXEL 3
 #define RGBA_BYTES_PER_PIXEL 4
@@ -190,6 +197,10 @@ gst_dgaccelerator_class_init (GstDgAcceleratorClass * klass)
       g_param_spec_string ("server_ip", "server_ip", "Full server IP",
           DEFAULT_SERVER_IP, G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, PROP_CLOUD_TOKEN,
+      g_param_spec_string ("cloud_token", "cloud_token", "Cloud token for non-local inference",
+          DEFAULT_CLOUD_TOKEN, G_PARAM_READWRITE));
+
   g_object_class_install_property (gobject_class, PROP_GPU_DEVICE_ID,
       g_param_spec_uint ("gpu-id",
           "Set GPU Device ID",
@@ -273,6 +284,17 @@ gst_dgaccelerator_set_property (GObject * object, guint prop_id,
       dgaccelerator->server_ip = new char[strlen(g_value_get_string(value))+1];
       strcpy(dgaccelerator->server_ip, g_value_get_string(value));
       break;
+    case PROP_CLOUD_TOKEN:
+      // Don't allow > 128 characters!
+      if (strlen(g_value_get_string(value))+1 > 128)
+      {
+        std::cout << "\n\nCloud Token is too long! Setting the cloud token to the default value!\n\n";
+        G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+        break;
+      }
+      dgaccelerator->cloud_token = new char[strlen(g_value_get_string(value))+1];
+      strcpy(dgaccelerator->cloud_token, g_value_get_string(value));
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -305,6 +327,9 @@ gst_dgaccelerator_get_property (GObject * object, guint prop_id,
     case PROP_SERVER_IP:
       g_value_set_string(value, dgaccelerator->server_ip);
       break;
+    case PROP_CLOUD_TOKEN:
+      g_value_set_string(value, dgaccelerator->cloud_token);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -323,16 +348,17 @@ gst_dgaccelerator_start (GstBaseTransform * btrans)
 
   DgAcceleratorInitParams init_params =
   { dgaccelerator->processing_width, dgaccelerator->processing_height,
-    "", ""
+    "", "", 0
   };
   snprintf(init_params.model_name, 128, "%s", dgaccelerator->model_name); // Sets the model name
-  snprintf(init_params.server_ip, 128, "%s", dgaccelerator->server_ip); // Sets the model name
+  snprintf(init_params.server_ip, 128, "%s", dgaccelerator->server_ip); // Sets the server ip
+  snprintf(init_params.cloud_token, 128, "%s", dgaccelerator->cloud_token); // Sets the cloud token
+
 
   GstQuery *queryparams = NULL;
   guint batch_size = 1;
   int val = -1;
 
-  dgaccelerator->dgacceleratorlib_ctx = DgAcceleratorCtxInit (&init_params);
 
   GST_DEBUG_OBJECT (dgaccelerator, "ctx lib %p \n", dgaccelerator->dgacceleratorlib_ctx);
 
@@ -355,6 +381,11 @@ gst_dgaccelerator_start (GstBaseTransform * btrans)
   GST_DEBUG_OBJECT (dgaccelerator, "Setting batch-size %d \n",
       dgaccelerator->batch_size);
   gst_query_unref (queryparams);
+
+  init_params.numInputStreams = batch_size; // Sets the number of input streams
+
+  dgaccelerator->dgacceleratorlib_ctx = DgAcceleratorCtxInit (&init_params);
+
 
   CHECK_CUDA_STATUS (cudaStreamCreate (&dgaccelerator->cuda_stream),
       "Could not create cuda stream");
@@ -492,6 +523,8 @@ get_converted_mat (GstDgAccelerator * dgaccelerator, NvBufSurface *input_buf, gi
     NvOSD_RectParams * crop_rect_params, gdouble & ratio, gint input_width,
     gint input_height)
 {
+  DG_TRC_BLOCK(DgAccelerator, get_converted_mat, DGTrace::lvlBasic);
+
   NvBufSurfTransform_Error err;
   NvBufSurfTransformConfigParams transform_config_params;
   NvBufSurfTransformParams transform_params;
@@ -633,7 +666,8 @@ error:
 static GstFlowReturn
 gst_dgaccelerator_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
 {
-  // retrieves the GstDgAccelerator object from the GstBaseTransform object and
+  DG_TRC_BLOCK(DgAccelerator, gst_dgaccelerator_transform_ip, DGTrace::lvlBasic);
+
   // initializes NVIDIA buffer and metadata variables.
   GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR (btrans);
   GstMapInfo in_map_info;
@@ -699,6 +733,8 @@ gst_dgaccelerator_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
     }
     // processes the frame using the DgAcceleratorProcess function and attaches
     // the metadata for the full frame
+    // Output is a DgAcceleratorOutput object!
+    // contains a structure
     output =
         DgAcceleratorProcess (dgaccelerator->dgacceleratorlib_ctx,
         dgaccelerator->cvmat->data);
@@ -725,6 +761,8 @@ static void
 attach_metadata_full_frame (GstDgAccelerator * dgaccelerator, NvDsFrameMeta *frame_meta,
     gdouble scale_ratio, DgAcceleratorOutput * output, guint batch_id)
 {
+  DG_TRC_BLOCK(DgAccelerator, attach_metadata_full_frame, DGTrace::lvlBasic);
+  
   NvDsBatchMeta *batch_meta = frame_meta->base_meta.batch_meta;
   NvDsObjectMeta *object_meta = NULL;
   static gchar font_name[] = "Serif";

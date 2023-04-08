@@ -117,6 +117,9 @@ struct _GstDgAccelerator
 
   // Server IP
   char *server_ip;
+
+  // Cloud Token
+  char *cloud_token;
 };
 
 // Boiler plate stuff

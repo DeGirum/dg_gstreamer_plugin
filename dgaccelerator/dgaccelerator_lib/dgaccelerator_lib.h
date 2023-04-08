@@ -44,6 +44,10 @@ typedef struct
   char model_name[MAX_LABEL_SIZE];
   // server ip
   char server_ip[MAX_LABEL_SIZE];
+  // Number of input streams
+  int numInputStreams;
+  // cloud token
+  char cloud_token[MAX_LABEL_SIZE];
 } DgAcceleratorInitParams;
 
 // Detected/Labelled object structure, stores bounding box info along with label
