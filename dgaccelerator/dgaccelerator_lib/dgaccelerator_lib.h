@@ -1,7 +1,7 @@
 /**
  * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
  * Copyright (c) 2023 Stephan Sokolov < stephan@degirum.com >
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a
  * copy of this software and associated documentation files (the "Software"),
  * to deal in the Software without restriction, including without limitation
@@ -19,64 +19,65 @@
  * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
- * 
+ *
  */
 
 #ifndef __DGACCELERATOR_LIB__
 #define __DGACCELERATOR_LIB__
 
-#define MAX_LABEL_SIZE 128
+#define MAX_LABEL_SIZE    128
 #define MAX_OBJ_PER_FRAME 35
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
 
-typedef struct DgAcceleratorCtx DgAcceleratorCtx;
+	typedef struct DgAcceleratorCtx DgAcceleratorCtx;
 
-// Init parameters structure as input, required for instantiating dgaccelerator_lib
-typedef struct
-{
-  // Width at which frame/object will be scaled
-  int processingWidth;
-  // height at which frame/object will be scaled
-  int processingHeight;
-  // model name
-  char model_name[MAX_LABEL_SIZE];
-  // server ip
-  char server_ip[MAX_LABEL_SIZE];
-  // Number of input streams
-  int numInputStreams;
-  // cloud token
-  char cloud_token[MAX_LABEL_SIZE];
-  // drop frames toggle
-  bool drop_frames;
-} DgAcceleratorInitParams;
+	// Init parameters structure as input, required for instantiating dgaccelerator_lib
+	typedef struct
+	{
+		// Width at which frame/object will be scaled
+		int processingWidth;
+		// height at which frame/object will be scaled
+		int processingHeight;
+		// model name
+		char model_name[ MAX_LABEL_SIZE ];
+		// server ip
+		char server_ip[ MAX_LABEL_SIZE ];
+		// Number of input streams
+		int numInputStreams;
+		// cloud token
+		char cloud_token[ MAX_LABEL_SIZE ];
+		// drop frames toggle
+		bool drop_frames;
+	} DgAcceleratorInitParams;
 
-// Detected/Labelled object structure, stores bounding box info along with label
-typedef struct
-{
-  float left;
-  float top;
-  float width;
-  float height;
-  char label[MAX_LABEL_SIZE];
-} DgAcceleratorObject;
+	// Detected/Labelled object structure, stores bounding box info along with label
+	typedef struct
+	{
+		float left;
+		float top;
+		float width;
+		float height;
+		char label[ MAX_LABEL_SIZE ];
+	} DgAcceleratorObject;
 
-// Output data returned after processing
-typedef struct
-{
-  int numObjects;
-  DgAcceleratorObject object[MAX_OBJ_PER_FRAME]; // Allocates room for MAX_OBJ_PER_FRAME objects
-} DgAcceleratorOutput;
+	// Output data returned after processing
+	typedef struct
+	{
+		int numObjects;
+		DgAcceleratorObject object[ MAX_OBJ_PER_FRAME ];  // Allocates room for MAX_OBJ_PER_FRAME objects
+	} DgAcceleratorOutput;
 
-// Initialize library
-DgAcceleratorCtx * DgAcceleratorCtxInit (DgAcceleratorInitParams *init_params);
+	// Initialize library
+	DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *init_params );
 
-// Process output
-DgAcceleratorOutput *DgAcceleratorProcess (DgAcceleratorCtx *ctx, unsigned char *data);
+	// Process output
+	DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char *data );
 
-// Deinitialize library context
-void DgAcceleratorCtxDeinit (DgAcceleratorCtx *ctx);
+	// Deinitialize library context
+	void DgAcceleratorCtxDeinit( DgAcceleratorCtx *ctx );
 
 #ifdef __cplusplus
 }
