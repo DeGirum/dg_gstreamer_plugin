@@ -233,8 +233,9 @@ DgAcceleratorProcess (DgAcceleratorCtx * ctx, unsigned char *data)
 void
 DgAcceleratorCtxDeinit (DgAcceleratorCtx * ctx)
 {
-    std::cout << "\nDeinitializing model.\n\n\n";
-    std::cout<<"\nDIFF: " << diff << "\n";
+    std::cout << "\nDeinitializing model, processing " << diff << " outstanding frames...\n\n\n";
+    // Process all outstanding frames:
+    ctx->model->waitCompletion();
 
     // Calculate FPS
     auto end_time = std::chrono::high_resolution_clock::now();
