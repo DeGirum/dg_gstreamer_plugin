@@ -120,6 +120,9 @@ struct _GstDgAccelerator
 
   // Cloud Token
   char *cloud_token;
+
+  // Skip frames toggle
+  bool drop_frames;
 };
 
 // Boiler plate stuff

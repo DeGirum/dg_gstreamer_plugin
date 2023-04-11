@@ -48,6 +48,8 @@ typedef struct
   int numInputStreams;
   // cloud token
   char cloud_token[MAX_LABEL_SIZE];
+  // drop frames toggle
+  bool drop_frames;
 } DgAcceleratorInitParams;
 
 // Detected/Labelled object structure, stores bounding box info along with label

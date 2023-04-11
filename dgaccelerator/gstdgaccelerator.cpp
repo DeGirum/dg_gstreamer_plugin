@@ -52,6 +52,7 @@ enum
   PROP_MODEL_NAME,
   PROP_SERVER_IP,
   PROP_CLOUD_TOKEN,
+  PROP_DROP_FRAMES,
   PROP_GPU_DEVICE_ID
 };
 
@@ -79,6 +80,7 @@ enum
 #define DEFAULT_MODEL_NAME "yolo_v5s_coco--512x512_quant_n2x_orca_1"
 #define DEFAULT_SERVER_IP "100.122.112.76"
 #define DEFAULT_CLOUD_TOKEN ""
+#define DEFAULT_DROP_FRAMES true
 
 #define RGB_BYTES_PER_PIXEL 3
 #define RGBA_BYTES_PER_PIXEL 4
@@ -201,6 +203,10 @@ gst_dgaccelerator_class_init (GstDgAcceleratorClass * klass)
       g_param_spec_string ("cloud_token", "cloud_token", "Cloud token for non-local inference",
           DEFAULT_CLOUD_TOKEN, G_PARAM_READWRITE));
 
+  g_object_class_install_property (gobject_class, PROP_DROP_FRAMES,
+      g_param_spec_boolean ("drop_frames", "drop_frames", "Toggle for skipping buffers if required for performance. Keep this on for visualization pipelines.",
+          DEFAULT_DROP_FRAMES, G_PARAM_READWRITE));
+
   g_object_class_install_property (gobject_class, PROP_GPU_DEVICE_ID,
       g_param_spec_uint ("gpu-id",
           "Set GPU Device ID",
@@ -237,6 +243,8 @@ gst_dgaccelerator_init (GstDgAccelerator * dgaccelerator)
   dgaccelerator->gpu_id = DEFAULT_GPU_ID;
   dgaccelerator->model_name = const_cast<char*>(DEFAULT_MODEL_NAME);
   dgaccelerator->server_ip = const_cast<char*>(DEFAULT_SERVER_IP);
+
+  dgaccelerator->drop_frames = DEFAULT_DROP_FRAMES;
 
   /* This quark is required to identify NvDsMeta when iterating through
    * the buffer metadatas */
@@ -295,6 +303,9 @@ gst_dgaccelerator_set_property (GObject * object, guint prop_id,
       dgaccelerator->cloud_token = new char[strlen(g_value_get_string(value))+1];
       strcpy(dgaccelerator->cloud_token, g_value_get_string(value));
       break;
+    case PROP_DROP_FRAMES:
+      dgaccelerator->drop_frames = g_value_get_boolean (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -330,6 +341,9 @@ gst_dgaccelerator_get_property (GObject * object, guint prop_id,
     case PROP_CLOUD_TOKEN:
       g_value_set_string(value, dgaccelerator->cloud_token);
       break;
+    case PROP_DROP_FRAMES:
+      g_value_set_boolean(value, dgaccelerator->drop_frames);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
       break;
@@ -348,12 +362,11 @@ gst_dgaccelerator_start (GstBaseTransform * btrans)
 
   DgAcceleratorInitParams init_params =
   { dgaccelerator->processing_width, dgaccelerator->processing_height,
-    "", "", 0
+    "", "", 0, "", dgaccelerator->drop_frames
   };
   snprintf(init_params.model_name, 128, "%s", dgaccelerator->model_name); // Sets the model name
   snprintf(init_params.server_ip, 128, "%s", dgaccelerator->server_ip); // Sets the server ip
   snprintf(init_params.cloud_token, 128, "%s", dgaccelerator->cloud_token); // Sets the cloud token
-
 
   GstQuery *queryparams = NULL;
   guint batch_size = 1;
@@ -673,6 +686,8 @@ gst_dgaccelerator_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
   GstMapInfo in_map_info;
   GstFlowReturn flow_ret = GST_FLOW_ERROR;
   gdouble scale_ratio = 1.0;
+
+  // Initialize an empty frame of objects
   DgAcceleratorOutput *output;
 
   NvBufSurface *surface = NULL;
@@ -685,9 +700,7 @@ gst_dgaccelerator_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
   CHECK_CUDA_STATUS (cudaSetDevice (dgaccelerator->gpu_id),
       "Unable to set cuda device");
 
-  // maps the input buffer to get the input NvBufSurface. The function then
-  // checks the NvBufSurface to ensure it is valid and that the memory is
-  // allocated on the correct GPU
+  // maps the input buffer to get the input NvBufSurface.
   memset (&in_map_info, 0, sizeof (in_map_info));
   if (!gst_buffer_map (inbuf, &in_map_info, GST_MAP_READ)) {
     g_print ("Error: Failed to map gst buffer\n");
@@ -699,6 +712,8 @@ gst_dgaccelerator_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
       "Processing Frame %" G_GUINT64_FORMAT " Surface %p\n",
       dgaccelerator->frame_num, surface);
 
+  // checks the NvBufSurface to ensure it is valid and that the memory is
+  // allocated on the correct GPU
   if (CHECK_NVDS_MEMORY_AND_GPUID (dgaccelerator, surface))
     goto error;
 
@@ -734,7 +749,6 @@ gst_dgaccelerator_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
     // processes the frame using the DgAcceleratorProcess function and attaches
     // the metadata for the full frame
     // Output is a DgAcceleratorOutput object!
-    // contains a structure
     output =
         DgAcceleratorProcess (dgaccelerator->dgacceleratorlib_ctx,
         dgaccelerator->cvmat->data);
@@ -748,7 +762,6 @@ gst_dgaccelerator_transform_ip (GstBaseTransform * btrans, GstBuffer * inbuf)
   flow_ret = GST_FLOW_OK;
 
 error:
-
   nvds_set_output_system_timestamp (inbuf, GST_ELEMENT_NAME (dgaccelerator));
   gst_buffer_unmap (inbuf, &in_map_info);
   return flow_ret;

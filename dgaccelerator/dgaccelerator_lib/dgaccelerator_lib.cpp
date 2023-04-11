@@ -50,6 +50,7 @@ using json_ld = nlohmann::basic_json<std::map, std::vector, std::string, bool,
 
 int NUM_INPUT_STREAMS;                  // Number of input streams
 int RING_BUFFER_SIZE;                   // Size of circular queue of output objects
+int FRAME_DIFF_LIMIT;                   // Maximum number of frames waiting to be processed
 std::vector<DgAcceleratorOutput*> out;  // Vector of pointers to output structs, for circular buffer implementation
 unsigned int curIndex;                  // circular buffer index implementation
 
@@ -78,6 +79,9 @@ DgAcceleratorCtxInit (DgAcceleratorInitParams * initParams)
     NUM_INPUT_STREAMS = initParams->numInputStreams;
     // Set the ring buffer size
     RING_BUFFER_SIZE = 2 * NUM_INPUT_STREAMS; // 2x the number of input streams works best
+    // Set the ceiling for frame skipping
+    FRAME_DIFF_LIMIT = 4 * NUM_INPUT_STREAMS;
+    // FRAME_DIFF_LIMIT = 8;
     
     // Initialize the vector of output objects.
     out.resize(RING_BUFFER_SIZE);
@@ -123,7 +127,7 @@ DgAcceleratorCtxInit (DgAcceleratorInitParams * initParams)
         // Reset the output struct:
         std::memset(out[index], 0, sizeof(DgAcceleratorObject));
         // out->numObjects = 0;
-
+        
         // Parse the json output, fill output structure using processed output
         json_ld resp = response;
         if (strcmp(resp.type_name(),"array") == 0 && response.dump() != "[]"){
@@ -147,10 +151,10 @@ DgAcceleratorCtxInit (DgAcceleratorInitParams * initParams)
                 };
                 snprintf(out[index]->object[i].label, 64, "%s", label.c_str()); // Sets the label
             }
-        }
+        } 
         else if (strcmp(resp.type_name(),"object") == 0) { // Model gave a bad result
           std::cout << response.dump() << "\n\n";
-        }
+        } 
         // Now, all of the detected objects in the frame are inside the out struct
         // std::cout << "Finished work on object with frame index: " << index << "\n";
         
@@ -185,8 +189,10 @@ DgAcceleratorProcess (DgAcceleratorCtx * ctx, unsigned char *data)
     int curFrameIndex = curIndex++;
     
     // Frame skip implementation:
-    if (diff > NUM_INPUT_STREAMS * 3 ) // if NUM_INPUT_STREAMS * 3 frames behind
-        goto skip;
+    if (ctx->initParams.drop_frames){
+        if (diff > FRAME_DIFF_LIMIT ) // if FRAME_DIFF_LIMIT frames behind
+            goto skip;
+    }
 
     if (data != NULL) // Process the data
     {
@@ -200,10 +206,7 @@ DgAcceleratorProcess (DgAcceleratorCtx * ctx, unsigned char *data)
         std::vector<unsigned char> ubuff = {};
 
         // The function imencode compresses the image and stores it in the memory buffer that is resized to fit the result.
-        {
-            DG_TRC_BLOCK(DgAcceleratorLib, DgAcceleratorProcess:imencode, DGTrace::lvlBasic);
-            cv::imencode(".jpeg", frameMat, ubuff, param);
-        }
+        cv::imencode(".jpeg", frameMat, ubuff, param);
 
         // Pass to the model.
         std::vector<std::vector<char>> frameVect {std::vector<char>(ubuff.begin(), ubuff.end())};
@@ -219,6 +222,7 @@ DgAcceleratorProcess (DgAcceleratorCtx * ctx, unsigned char *data)
     return out[curFrameIndex];
 
     skip:
+        DG_TRC_POINT( DgAcceleratorLib, ProcessSkip, DGTrace::lvlBasic );
         diff--;
         std::cout << "Skipping frame due to diff of " << diff << "\n";
         std::cout << "If this happens too often, lower the incoming framerate of streams and/or the number of streams!\n";
