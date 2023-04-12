@@ -55,6 +55,9 @@ unsigned int curIndex;                     // circular buffer index implementati
 size_t diff = 0;             // Counter for # of frames waiting for callback at any given moment
 size_t framesProcessed = 0;  // Frame count for FPS calculation, careful with uint overflow...
 
+bool failed = false;
+std::string failReason;
+
 // Clock for counting total duration
 std::chrono::time_point< std::chrono::high_resolution_clock > start_time;
 
@@ -78,7 +81,6 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	RING_BUFFER_SIZE = 2 * NUM_INPUT_STREAMS;  // 2x the number of input streams works best
 	// Set the ceiling for frame skipping
 	FRAME_DIFF_LIMIT = 4 * NUM_INPUT_STREAMS;
-	// FRAME_DIFF_LIMIT = 8;
 
 	// Initialize the vector of output objects.
 	out.resize( RING_BUFFER_SIZE );
@@ -124,13 +126,12 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 		unsigned int index = std::stoi( fr );  // Index of the Output struct to fill
 		// Reset the output struct:
 		std::memset( out[ index ], 0, sizeof( DgAcceleratorObject ) );
-		// out->numObjects = 0;
 
 		// Parse the json output, fill output structure using processed output
 		json_ld resp = response;
 		if( strcmp( resp.type_name(), "array" ) == 0 && response.dump() != "[]" )
 		{
-			// Iterate over all of the detected objects
+    		// Iterate over all of the detected objects
 			for( int i = 0; i < resp.size(); i++ )
 			{
 				out[ index ]->numObjects++;
@@ -152,8 +153,9 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 			}
 		}
 		else if( strcmp( resp.type_name(), "object" ) == 0 )
-		{  // Model gave a bad result
-			std::cout << response.dump() << "\n\n";
+		{   // Model gave a bad result
+            failed = true;
+            failReason = response.dump();
 		}
 		// Now, all of the detected objects in the frame are inside the out struct
 		// std::cout << "Finished work on object with frame index: " << index << "\n";
@@ -185,6 +187,9 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 	// Wrap around RING_BUFFER_SIZE for circular buffer implementation
 	curIndex %= RING_BUFFER_SIZE;
 	int curFrameIndex = curIndex++;
+
+    if ( failed )
+        throw std::runtime_error( "Model gave bad result: " + failReason );
 
 	// Frame skip implementation:
 	if( ctx->initParams.drop_frames )
