@@ -1,5 +1,4 @@
 WITH_OPENCV?=1
-USE_OPTIMIZED_DGACCELERATOR?=0
 # Set the CUDA Version of your system here: 
 # To find your CUDA version, run in a terminal window: nvcc --version
 CUDA_VER?=11.4
@@ -9,12 +8,9 @@ endif
 TARGET_DEVICE = $(shell gcc -dumpmachine | cut -f1 -d -)
 CXX:= g++
 
-ifeq ($(USE_OPTIMIZED_DGACCELERATOR),1)
-  SRCS:= gstdgaccelerator_optimized.cpp include/client/dg_client.cpp include/client/dg_model_api.cpp
-else
-  SRCS:= gstdgaccelerator.cpp include/client/dg_client.cpp include/client/dg_model_api.cpp 
-endif
-# headers go here?
+
+SRCS:= gstdgaccelerator.cpp include/client/dg_client.cpp include/client/dg_model_api.cpp 
+
 INCS:= $(wildcard *.h) 
 include_HEADERS:= $(wildcard include/Utilities/*.h)
 include_HEADERS+= $(wildcard include/DglibInterface/*.h)
