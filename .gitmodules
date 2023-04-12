@@ -1,0 +1,3 @@
+[submodule "CppSDK"]
+	path = CppSDK
+	url = https://github.com/DeGirum/CppSDK
