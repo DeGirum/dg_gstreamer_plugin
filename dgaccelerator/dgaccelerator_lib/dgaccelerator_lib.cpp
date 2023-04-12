@@ -52,10 +52,10 @@ int FRAME_DIFF_LIMIT;                      // Maximum number of frames waiting t
 std::vector< DgAcceleratorOutput * > out;  // Vector of pointers to output structs, for circular buffer implementation
 unsigned int curIndex;                     // circular buffer index implementation
 
-size_t diff = 0;                           // Counter for # of frames waiting for callback at any given moment
-size_t framesProcessed = 0;                // Frame count for FPS calculation, careful with uint overflow...
+size_t diff = 0;             // Counter for # of frames waiting for callback at any given moment
+size_t framesProcessed = 0;  // Frame count for FPS calculation, careful with uint overflow...
 
-bool failed = false;                       // Model error message handling
+bool failed = false;  // Model error message handling
 std::string failReason;
 
 // Clock for counting total duration
@@ -131,7 +131,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 		json_ld resp = response;
 		if( strcmp( resp.type_name(), "array" ) == 0 && response.dump() != "[]" )
 		{
-    		// Iterate over all of the detected objects
+			// Iterate over all of the detected objects
 			for( int i = 0; i < resp.size(); i++ )
 			{
 				out[ index ]->numObjects++;
@@ -153,9 +153,9 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 			}
 		}
 		else if( strcmp( resp.type_name(), "object" ) == 0 )
-		{   // Model gave a bad result
-            failed = true;
-            failReason = response.dump();
+		{  // Model gave a bad result
+			failed = true;
+			failReason = response.dump();
 		}
 		// Now, all of the detected objects in the frame are inside the out struct
 		// std::cout << "Finished work on object with frame index: " << index << "\n";
@@ -188,8 +188,8 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 	curIndex %= RING_BUFFER_SIZE;
 	int curFrameIndex = curIndex++;
 
-    if ( failed )
-        throw std::runtime_error( "Model gave bad result: " + failReason );
+	if( failed )
+		throw std::runtime_error( "Model gave bad result: " + failReason );
 
 	// Frame skip implementation:
 	if( ctx->initParams.drop_frames )
@@ -218,12 +218,12 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 	return out[ curFrameIndex ];
 
 skip:
-    // Reach here if the model can't keep up with all the incoming frames
+	// Reach here if the model can't keep up with all the incoming frames
 	DG_TRC_POINT( DgAcceleratorLib, ProcessSkip, DGTrace::lvlBasic );
 	std::cout << "Skipping frame due to diff of " << diff << "\n";
 	std::cout << "If this happens too often, lower the incoming framerate of streams and/or the number of streams!\n";
-    diff--;
-    // Return an empty frame instead
+	diff--;
+	// Return an empty frame instead
 	return (DgAcceleratorOutput *)calloc( 1, sizeof( DgAcceleratorOutput ) );
 }
 

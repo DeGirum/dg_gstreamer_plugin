@@ -674,11 +674,10 @@ static GstFlowReturn get_converted_mat(
 	cv::cvtColor( in_mat, *dgaccelerator->cvmat, CV_RGBA2BGR );
 #endif
 
-
-if( NvBufSurfaceUnMap( dgaccelerator->inter_buf, 0, 0 ) )
-{
-	goto error;
-}
+	if( NvBufSurfaceUnMap( dgaccelerator->inter_buf, 0, 0 ) )
+	{
+		goto error;
+	}
 
 	if( dgaccelerator->is_integrated )
 	{
