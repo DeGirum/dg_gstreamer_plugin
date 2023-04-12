@@ -660,6 +660,7 @@ static GstFlowReturn get_converted_mat(
 
 	/* Use openCV to remove padding and convert RGBA to BGR. Can be skipped if
 	 * algorithm can handle padded RGBA data. */
+
 	in_mat = cv::Mat(
 		dgaccelerator->processing_height,
 		dgaccelerator->processing_width,
@@ -673,10 +674,11 @@ static GstFlowReturn get_converted_mat(
 	cv::cvtColor( in_mat, *dgaccelerator->cvmat, CV_RGBA2BGR );
 #endif
 
-	if( NvBufSurfaceUnMap( dgaccelerator->inter_buf, 0, 0 ) )
-	{
-		goto error;
-	}
+
+if( NvBufSurfaceUnMap( dgaccelerator->inter_buf, 0, 0 ) )
+{
+	goto error;
+}
 
 	if( dgaccelerator->is_integrated )
 	{

@@ -52,10 +52,10 @@ int FRAME_DIFF_LIMIT;                      // Maximum number of frames waiting t
 std::vector< DgAcceleratorOutput * > out;  // Vector of pointers to output structs, for circular buffer implementation
 unsigned int curIndex;                     // circular buffer index implementation
 
-size_t diff = 0;             // Counter for # of frames waiting for callback at any given moment
-size_t framesProcessed = 0;  // Frame count for FPS calculation, careful with uint overflow...
+size_t diff = 0;                           // Counter for # of frames waiting for callback at any given moment
+size_t framesProcessed = 0;                // Frame count for FPS calculation, careful with uint overflow...
 
-bool failed = false;
+bool failed = false;                       // Model error message handling
 std::string failReason;
 
 // Clock for counting total duration
@@ -78,9 +78,9 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	// Initialize number of input streams
 	NUM_INPUT_STREAMS = initParams->numInputStreams;
 	// Set the ring buffer size
-	RING_BUFFER_SIZE = 2 * NUM_INPUT_STREAMS;  // 2x the number of input streams works best
+	RING_BUFFER_SIZE = 2 * NUM_INPUT_STREAMS;  // 2x the number of input streams works best..
 	// Set the ceiling for frame skipping
-	FRAME_DIFF_LIMIT = 4 * NUM_INPUT_STREAMS;
+	FRAME_DIFF_LIMIT = RING_BUFFER_SIZE - 1;
 
 	// Initialize the vector of output objects.
 	out.resize( RING_BUFFER_SIZE );
@@ -198,38 +198,32 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 			goto skip;
 	}
 
-	if( data != NULL )  // Process the data
+	if( data != NULL )  // Data is a pointer to a cv::Mat.
 	{
-		// Data is a pointer to a cv::Mat.
-		// Extract the mat: rows, cols
+		// Extract the mat
 		cv::Mat frameMat( ctx->initParams.processingHeight, ctx->initParams.processingWidth, CV_8UC3, data );
 		// (Usually is square) We can now pass it to the AI Model.
-
 		// encode this mat into a jpeg buffer vector.
 		std::vector< int > param = { cv::IMWRITE_JPEG_QUALITY, 85 };
 		std::vector< unsigned char > ubuff = {};
-
 		// The function imencode compresses the image and stores it in the memory buffer that is resized to fit the result.
 		cv::imencode( ".jpeg", frameMat, ubuff, param );
-
 		// Pass to the model.
 		std::vector< std::vector< char > > frameVect{ std::vector< char >( ubuff.begin(), ubuff.end() ) };
 		ctx->model->predict( frameVect, std::to_string( curFrameIndex ) );  // Call the predict function
 		// This passes the data buffer and the current frame output object index to work on
-
-		// Uncomment this to turn on sequential mode
-		// ctx->model->waitCompletion();
-
 		frameMat.release();
 	}
 	// std::cout << "Returning object with current frame index: " << curFrameIndex << "\n";
 	return out[ curFrameIndex ];
 
 skip:
+    // Reach here if the model can't keep up with all the incoming frames
 	DG_TRC_POINT( DgAcceleratorLib, ProcessSkip, DGTrace::lvlBasic );
-	diff--;
 	std::cout << "Skipping frame due to diff of " << diff << "\n";
 	std::cout << "If this happens too often, lower the incoming framerate of streams and/or the number of streams!\n";
+    diff--;
+    // Return an empty frame instead
 	return (DgAcceleratorOutput *)calloc( 1, sizeof( DgAcceleratorOutput ) );
 }
 
