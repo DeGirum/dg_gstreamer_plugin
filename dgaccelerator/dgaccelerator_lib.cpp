@@ -27,10 +27,10 @@
 #include <stdlib.h>
 
 #include <memory>
-#include "dg_model_api.h"
-#include "dg_file_utilities.h"
-#include "dg_tracing_facility.h"
 #include "dg_client.h"
+#include "dg_file_utilities.h"
+#include "dg_model_api.h"
+#include "dg_tracing_facility.h"
 #include "json.hpp"
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
