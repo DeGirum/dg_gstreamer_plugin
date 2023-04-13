@@ -32,7 +32,7 @@
 #include <ostream>
 #include <sstream>
 #include <string>
-#include "include/Utilities/dg_tracing_facility.h"
+#include "dg_tracing_facility.h"
 
 GST_DEBUG_CATEGORY_STATIC( gst_dgaccelerator_debug );
 #define GST_CAT_DEFAULT gst_dgaccelerator_debug

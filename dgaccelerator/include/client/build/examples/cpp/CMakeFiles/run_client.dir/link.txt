@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/run_client.dir/dg_core_client.cpp.o -o /home/stephan/Documents/Dev/CppSDK/bin/run_client  /home/stephan/Documents/Dev/CppSDK/bin/libaiclientlib.a -lpthread 
