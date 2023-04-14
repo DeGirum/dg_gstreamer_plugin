@@ -16,7 +16,7 @@ For more information on NVIDIA's DeepStream SDK and elements to be used in conju
   - [Improved inference and visualization of 4 videos with capped framerates and frame skipping](#5-improved-inference-and-visualization-of-4-videos-with-capped-framerates-and-frame-skipping)
   - [Improved inference and visualization of 8 videos with capped framerates and frame skipping](#6-improved-inference-and-visualization-of-8-videos-with-capped-framerates-and-frame-skipping)
   - [Inference and visualization using a cloud model](#7-inference-and-visualization-using-a-cloud-model)
-  - [\Inference without visualization (model benchmark) example](#8-inference-without-visualization-model-benchmark-example)
+  - [Inference without visualization (model benchmark) example](#8-inference-without-visualization-model-benchmark-example)
 - [Plugin Properties](#plugin-properties)
 - [Installation](#installation)
 
