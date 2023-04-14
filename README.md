@@ -162,7 +162,7 @@ Create and enter into a build folder:
 
 Make and install:
 
-```sudo cmake --build . --target install``` .
+```cmake .. && sudo cmake --build . --target install``` .
 
 [DeepStream Plugin Guide]:<https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_plugin_Intro.html>
 [DeepStream installation]:<https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_Quickstart.html>
