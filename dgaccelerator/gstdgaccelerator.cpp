@@ -32,7 +32,7 @@
 #include <ostream>
 #include <sstream>
 #include <string>
-#include "include/Utilities/dg_tracing_facility.h"
+#include "dg_tracing_facility.h"
 
 GST_DEBUG_CATEGORY_STATIC( gst_dgaccelerator_debug );
 #define GST_CAT_DEFAULT gst_dgaccelerator_debug
@@ -51,6 +51,7 @@ enum
 	PROP_MODEL_NAME,
 	PROP_SERVER_IP,
 	PROP_CLOUD_TOKEN,
+	PROP_BOX_COLOR,
 	PROP_DROP_FRAMES,
 	PROP_GPU_DEVICE_ID
 };
@@ -84,6 +85,7 @@ enum
 #define DEFAULT_SERVER_IP         "100.122.112.76"
 #define DEFAULT_CLOUD_TOKEN       ""
 #define DEFAULT_DROP_FRAMES       true
+#define DEFAULT_BOX_COLOR         DGACCELERATOR_BOX_COLOR_RED
 
 #define RGB_BYTES_PER_PIXEL  3
 #define RGBA_BYTES_PER_PIXEL 4
@@ -145,6 +147,30 @@ static void attach_metadata_full_frame(
 	gdouble scale_ratio,
 	DgAcceleratorOutput *output,
 	guint batch_id );
+
+// Box Color get type function
+#define GST_TYPE_DGACCELERATOR_BOX_COLOR ( gst_dgaccelerator_box_color_get_type() )
+static GType gst_dgaccelerator_box_color_get_type( void )
+{
+	static GType dgaccelerator_box_color_type = 0;
+	static const GEnumValue dgaccelerator_box_color[] = {
+		{ DGACCELERATOR_BOX_COLOR_RED, "Red Box Color", "red" },
+		{ DGACCELERATOR_BOX_COLOR_GREEN, "Green Box Color", "green" },
+		{ DGACCELERATOR_BOX_COLOR_BLUE, "Blue Box Color", "blue" },
+		{ DGACCELERATOR_BOX_COLOR_YELLOW, "Yellow Box Color", "yellow" },
+		{ DGACCELERATOR_BOX_COLOR_CYAN, "Cyan Box Color", "cyan" },
+		{ DGACCELERATOR_BOX_COLOR_PINK, "Pink Box Color", "pink" },
+		{ DGACCELERATOR_BOX_COLOR_BLACK, "Black Box Color", "black" },
+		{ 0, NULL, NULL },
+	};
+
+	if( !dgaccelerator_box_color_type )
+	{
+		dgaccelerator_box_color_type = g_enum_register_static( "GstDgAcceleratorBoxColor", dgaccelerator_box_color );
+	}
+	return dgaccelerator_box_color_type;
+}
+
 // Installs the object and BaseTransform properties along with pads
 static void gst_dgaccelerator_class_init( GstDgAcceleratorClass *klass )
 {
@@ -224,6 +250,17 @@ static void gst_dgaccelerator_class_init( GstDgAcceleratorClass *klass )
 
 	g_object_class_install_property(
 		gobject_class,
+		PROP_BOX_COLOR,
+		g_param_spec_enum(
+			"box-color",
+			"Box Color",
+			"Box Color for visualization",
+			GST_TYPE_DGACCELERATOR_BOX_COLOR,
+			DEFAULT_BOX_COLOR,
+			GParamFlags( G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS ) ) );
+
+	g_object_class_install_property(
+		gobject_class,
 		PROP_DROP_FRAMES,
 		g_param_spec_boolean(
 			"drop_frames",
@@ -269,6 +306,7 @@ static void gst_dgaccelerator_init( GstDgAccelerator *dgaccelerator )
 	dgaccelerator->gpu_id = DEFAULT_GPU_ID;
 	dgaccelerator->model_name = const_cast< char * >( DEFAULT_MODEL_NAME );
 	dgaccelerator->server_ip = const_cast< char * >( DEFAULT_SERVER_IP );
+	dgaccelerator->box_color = DEFAULT_BOX_COLOR;
 
 	dgaccelerator->drop_frames = DEFAULT_DROP_FRAMES;
 
@@ -294,6 +332,9 @@ static void gst_dgaccelerator_set_property( GObject *object, guint prop_id, cons
 		break;
 	case PROP_GPU_DEVICE_ID:
 		dgaccelerator->gpu_id = g_value_get_uint( value );
+		break;
+	case PROP_BOX_COLOR:
+		dgaccelerator->box_color = (GstDgAcceleratorBoxColor)g_value_get_enum( value );
 		break;
 	case PROP_MODEL_NAME:
 		// Don't allow >128 characters!
@@ -356,6 +397,10 @@ static void gst_dgaccelerator_get_property( GObject *object, guint prop_id, GVal
 	case PROP_GPU_DEVICE_ID:
 		g_value_set_uint( value, dgaccelerator->gpu_id );
 		break;
+	case PROP_BOX_COLOR:
+		g_value_set_enum( value, dgaccelerator->box_color );
+		break;
+
 	case PROP_MODEL_NAME:
 		g_value_set_string( value, dgaccelerator->model_name );
 		break;
@@ -424,6 +469,34 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 	if( dgaccelerator->inter_buf )
 		NvBufSurfaceDestroy( dgaccelerator->inter_buf );
 	dgaccelerator->inter_buf = NULL;
+
+	switch( dgaccelerator->box_color )
+		{
+		case DGACCELERATOR_BOX_COLOR_RED:  // Red
+			dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
+			break;
+		case DGACCELERATOR_BOX_COLOR_GREEN:  // Green
+			dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 1, 0, 1 };
+			break;
+		case DGACCELERATOR_BOX_COLOR_BLUE:  // Blue
+			dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 0, 1, 1 };
+			break;
+		case DGACCELERATOR_BOX_COLOR_CYAN:  // Cyan
+			dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 1, 1, 1 };
+			break;
+		case DGACCELERATOR_BOX_COLOR_PINK:  // Pink
+			dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 0.06, 0.94, 1 };
+			break;
+		case DGACCELERATOR_BOX_COLOR_YELLOW:  // Yellow
+			dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 1, 0, 1 };
+			break;
+		case DGACCELERATOR_BOX_COLOR_BLACK:  // Black
+			dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 0, 0, 1 };
+			break;
+		default:  // Default to red
+			dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
+			break;
+		}
 
 	/* An intermediate buffer for NV12/RGBA to BGR conversion  will be
 	 * required. Can be skipped if custom algorithm can work directly on NV12/RGBA. */
@@ -834,9 +907,10 @@ static void attach_metadata_full_frame(
 		/* Semi-transparent yellow background */
 		rect_params.has_bg_color = 0;
 		rect_params.bg_color = ( NvOSD_ColorParams ){ 1, 1, 0, 0.4 };
-		/* Red border of width 6 */
+		// Set box border width
 		rect_params.border_width = 3;
-		rect_params.border_color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
+		// Set box color
+		rect_params.border_color = dgaccelerator->color;
 
 		/* Scale the bounding boxes proportionally based on how the object/frame was
 		 * scaled during input */
