@@ -1,1 +1,0 @@
-/usr/bin/c++ CMakeFiles/run_client_async.dir/dg_core_client_async.cpp.o -o /home/stephan/Documents/Dev/CppSDK/bin/run_client_async  /home/stephan/Documents/Dev/CppSDK/bin/libaiclientlib.a -lpthread 

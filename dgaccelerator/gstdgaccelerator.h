@@ -32,16 +32,10 @@
 #include <gst/base/gstbasetransform.h>
 #include <gst/video/video.h>
 
-/* Open CV headers */
-#pragma GCC diagnostic push
-#if __GNUC__ >= 8
-#pragma GCC diagnostic ignored "-Wclass-memaccess"
-#endif
-#pragma GCC diagnostic pop
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <memory>
-#include "dgaccelerator_lib/dgaccelerator_lib.h"
+#include "dgaccelerator_lib.h"
 #include "gst-nvquery.h"
 #include "gstnvdsmeta.h"
 #include "nvbufsurface.h"
@@ -68,6 +62,20 @@ typedef struct _GstDgAcceleratorClass GstDgAcceleratorClass;
 #define GST_IS_DGACCELERATOR( obj )         ( G_TYPE_CHECK_INSTANCE_TYPE( ( obj ), GST_TYPE_DGACCELERATOR ) )
 #define GST_IS_DGACCELERATOR_CLASS( klass ) ( G_TYPE_CHECK_CLASS_TYPE( ( klass ), GST_TYPE_DGACCELERATOR ) )
 #define GST_DGACCELERATOR_CAST( obj )       ( (GstDgAccelerator *)( obj ) )
+
+/*
+ * Possible colors for box-color property.
+ */
+typedef enum
+{
+	DGACCELERATOR_BOX_COLOR_RED,
+	DGACCELERATOR_BOX_COLOR_GREEN,
+	DGACCELERATOR_BOX_COLOR_BLUE,
+	DGACCELERATOR_BOX_COLOR_YELLOW,
+	DGACCELERATOR_BOX_COLOR_CYAN,
+	DGACCELERATOR_BOX_COLOR_PINK,
+	DGACCELERATOR_BOX_COLOR_BLACK
+} GstDgAcceleratorBoxColor;
 
 struct _GstDgAccelerator
 {
@@ -122,6 +130,11 @@ struct _GstDgAccelerator
 
 	// Skip frames toggle
 	bool drop_frames;
+
+	// Box Color
+	GstDgAcceleratorBoxColor box_color;
+	// box color converted
+	NvOSD_ColorParams color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
 };
 
 // Boiler plate stuff
