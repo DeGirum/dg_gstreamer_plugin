@@ -156,13 +156,9 @@ Enter the directory:
 
 ```cd dg_gstreamer_plugin/dgaccelerator``` ,
 
-Create and enter into a build folder:
+Run the installation script:
 
-```mkdir build && cd build``` ,
-
-Make and install:
-
-```cmake .. && sudo cmake --build . --target install``` .
+```./install.sh``` 
 
 [DeepStream Plugin Guide]:<https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_plugin_Intro.html>
 [DeepStream installation]:<https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_Quickstart.html>
