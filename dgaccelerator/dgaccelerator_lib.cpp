@@ -73,7 +73,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	// Set the ring buffer size
 	RING_BUFFER_SIZE = 2 * NUM_INPUT_STREAMS;  // 2x the number of input streams works best..
 	// Set the ceiling for frame skipping
-	FRAME_DIFF_LIMIT = std::max(3, RING_BUFFER_SIZE - 1);
+	FRAME_DIFF_LIMIT = std::max( 3, RING_BUFFER_SIZE - 1 );
 
 	// Initialize the vector of output objects.
 	out.resize( RING_BUFFER_SIZE );

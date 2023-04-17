@@ -471,32 +471,32 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 	dgaccelerator->inter_buf = NULL;
 
 	switch( dgaccelerator->box_color )
-		{
-		case DGACCELERATOR_BOX_COLOR_RED:  // Red
-			dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
-			break;
-		case DGACCELERATOR_BOX_COLOR_GREEN:  // Green
-			dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 1, 0, 1 };
-			break;
-		case DGACCELERATOR_BOX_COLOR_BLUE:  // Blue
-			dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 0, 1, 1 };
-			break;
-		case DGACCELERATOR_BOX_COLOR_CYAN:  // Cyan
-			dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 1, 1, 1 };
-			break;
-		case DGACCELERATOR_BOX_COLOR_PINK:  // Pink
-			dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 0.06, 0.94, 1 };
-			break;
-		case DGACCELERATOR_BOX_COLOR_YELLOW:  // Yellow
-			dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 1, 0, 1 };
-			break;
-		case DGACCELERATOR_BOX_COLOR_BLACK:  // Black
-			dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 0, 0, 1 };
-			break;
-		default:  // Default to red
-			dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
-			break;
-		}
+	{
+	case DGACCELERATOR_BOX_COLOR_RED:  // Red
+		dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
+		break;
+	case DGACCELERATOR_BOX_COLOR_GREEN:  // Green
+		dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 1, 0, 1 };
+		break;
+	case DGACCELERATOR_BOX_COLOR_BLUE:  // Blue
+		dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 0, 1, 1 };
+		break;
+	case DGACCELERATOR_BOX_COLOR_CYAN:  // Cyan
+		dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 1, 1, 1 };
+		break;
+	case DGACCELERATOR_BOX_COLOR_PINK:  // Pink
+		dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 0.06, 0.94, 1 };
+		break;
+	case DGACCELERATOR_BOX_COLOR_YELLOW:  // Yellow
+		dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 1, 0, 1 };
+		break;
+	case DGACCELERATOR_BOX_COLOR_BLACK:  // Black
+		dgaccelerator->color = ( NvOSD_ColorParams ){ 0, 0, 0, 1 };
+		break;
+	default:  // Default to red
+		dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
+		break;
+	}
 
 	/* An intermediate buffer for NV12/RGBA to BGR conversion  will be
 	 * required. Can be skipped if custom algorithm can work directly on NV12/RGBA. */
