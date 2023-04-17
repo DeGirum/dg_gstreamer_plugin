@@ -146,6 +146,7 @@ This plugin requires a [DeepStream installation], a [GStreamer installation], an
 | GStreamer | 1.16.3+ |
 | OpenCV | 4+ |
 
+
 **Installation Steps:**
 
 Clone the repository: 
@@ -156,9 +157,29 @@ Enter the directory:
 
 ```cd dg_gstreamer_plugin/dgaccelerator``` ,
 
-Run the installation script:
+> **If needed, install the dependencies**:
+> 
+> ```./installDependencies.sh```  for GStreamer and OpenCV,
+> 
+> and download DeepStream here:
+> https://developer.nvidia.com/downloads/deepstream-sdk-v620-jetson-tbz2
+> and install DeepStream:
+> ```
+> sudo tar -xvf deepstream_sdk_v6.2.0_jetson.tbz2 -C /
+> cd /opt/nvidia/deepstream/deepstream-6.2
+> sudo ./install.sh
+> sudo ldconfig
+> ```
 
-```./install.sh``` 
+To build the plugin, while within the directory of the cloned repository, run
+
+```
+mkdir build && cd build
+cmake ..
+sudo cmake --build . --target install
+```
+
+Now, GStreamer pipelines have access to the element ```dgaccelerator``` for accelerating video processing tasks using NVIDIA DeepStream.
 
 [DeepStream Plugin Guide]:<https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_plugin_Intro.html>
 [DeepStream installation]:<https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_Quickstart.html>
