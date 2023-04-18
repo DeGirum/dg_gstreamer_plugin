@@ -68,13 +68,6 @@ set(SRCS
 # Create library target
 add_library(nvdsgst_dgaccelerator SHARED ${SRCS})
 
-# Set compile options
-if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
-    target_compile_options(nvdsgst_dgaccelerator PUBLIC -Wclass-memaccess -fPIC)
-else()
-    message(FATAL_ERROR "${CMAKE_CXX_COMPILER_ID}: compiler not supported")
-endif()
-
 # Set include directories
 target_include_directories(nvdsgst_dgaccelerator PUBLIC
     ${OpenCV_INCLUDE_DIRS}

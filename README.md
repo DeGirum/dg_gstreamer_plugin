@@ -18,7 +18,7 @@ For more information on NVIDIA's DeepStream SDK and elements to be used in conju
   - [Inference and visualization using a cloud model](#7-inference-and-visualization-using-a-cloud-model)
   - [Inference without visualization (model benchmark) example](#8-inference-without-visualization-model-benchmark-example)
 - [Plugin Properties](#plugin-properties)
-- [Installation](#installation)
+- [Installation](#dependencies)
 
 
 ***
@@ -136,7 +136,7 @@ gst-launch-1.0 (...) ! dgaccelerator property1=value1 property2=value2 ! (...)
 
 ***
 
-### Installation
+### Dependencies
 
 This plugin requires a [DeepStream installation], a [GStreamer installation], and an [OpenCV installation].
 
@@ -149,28 +149,41 @@ This plugin requires a [DeepStream installation], a [GStreamer installation], an
 
 **Installation Steps:**
 
-Clone the repository: 
+Clone the repository:
 
 ```git clone https://github.com/DeGirum/dg_gstreamer_plugin.git```
 
 Enter the directory:
 
 ```cd dg_gstreamer_plugin/dgaccelerator``` ,
+> We have provided a shell script to install the above [dependencies](#dependencies). 
+>
+> **If you already have DeepStream and OpenCV installed, please skip to [building the plugin](#build-the-plugin).**
 
-> **If needed, install the dependencies**:
-> 
-> ```./installDependencies.sh```  for GStreamer and OpenCV,
-> 
-> and download DeepStream here:
-> https://developer.nvidia.com/downloads/deepstream-sdk-v620-jetson-tbz2
-> and install DeepStream:
-> ```
-> sudo tar -xvf deepstream_sdk_v6.2.0_jetson.tbz2 -C /
-> cd /opt/nvidia/deepstream/deepstream-6.2
-> sudo ./install.sh
-> sudo ldconfig
-> ```
+## Install dependencies with our script (optional):
+### For Jetson systems:
+1.  Download the Jetson tar file for DeepStream from here: 
+- https://developer.nvidia.com/downloads/deepstream-sdk-v620-jetson-tbz2
 
+2.  Run the script with the tar file's location as an argument: 
+
+```./installDependencies.sh path/to/TarFile.tbz2 ```
+
+### For non-Jetson systems (systems with a dGPU):
+1.  Download the dGPU tar file for DeepStream from here: 
+- https://developer.nvidia.com/downloads/deepstream-sdk-v620-x86-64-tbz2
+
+2.  Download the NVIDIA driver version 525.85.12 here: 
+- https://www.nvidia.com/Download/driverResults.aspx/198879/en-us/
+
+3.  Run the script with the tar file and driver file location as arguments: 
+
+```./installDependencies.sh path/to/TarFile.tbz2 path/to/DriverFile.run```
+> Alternatively, you can install DeepStream without the NVIDIA drivers if you already have them:
+>
+> ```./installDependencies.sh path/to/TarFile.tbz2```
+
+## Build the plugin
 To build the plugin, while within the directory of the cloned repository, run
 
 ```
