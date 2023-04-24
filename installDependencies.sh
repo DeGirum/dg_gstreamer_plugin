@@ -45,6 +45,10 @@ else
     fi
 fi
 
+# Install CppSdk components if needed
+git submodule init
+git submodule update
+
 # Install minimal prerequisites
 sudo apt update
 sudo apt install -y cmake g++ wget unzip
@@ -62,15 +66,18 @@ sudo apt install -y \
     gstreamer1.0-qt5 \
     gstreamer1.0-pulseaudio
 
-# Install OpenCV dependencies
-pushd $(pwd)
-cd ~/Documents/
-wget -O opencv.zip https://github.com/opencv/opencv/archive/4.x.zip
-unzip opencv.zip
-mkdir -p build && cd build
-cmake ../opencv-4.x
-cmake --build .
-popd
+# Install OpenCV dependencies if OpenCV not found or < 4.2.0
+opencv_version=$(opencv_version)
+if [[ -z "$opencv_version" ]] || [[ "$(dpkg --compare-versions "$opencv_version" lt "4.2.0"; echo $?)" -eq 0 ]]; then
+  pushd $(pwd)
+  cd ~/Documents/
+  wget -O opencv.zip https://github.com/opencv/opencv/archive/4.x.zip
+  unzip opencv.zip
+  mkdir -p build && cd build
+  cmake ../opencv-4.x
+  cmake --build .
+  popd
+fi
 
 # Install DeepStream dependencies
 sudo apt install -y \
@@ -92,16 +99,18 @@ sudo apt install -y \
     python3
 
 # Runs the command to check if nvidia-jetpack is found (for checking if Jetson system)
-if sudo apt-cache show nvidia-jetpack &> /dev/null; then
-    echo "Found nvidia-jetpack, no need for CUDA/drivers/tensorRT installation."
-    JETPACK_FOUND=true
+if sudo apt-cache show nvidia-jetpack 2> /tmp/apt_error && grep -q "N: Unable to locate package" /tmp/apt_error; then
+  echo "nvidia-jetpack package not found, installing CUDA/drivers/TensorRT."
+  JETPACK_FOUND=false
 else
-    echo "nvidia-jetpack package not found, installing CUDA/drivers/tensorRT."
-    JETPACK_FOUND=false
+  echo "Found nvidia-jetpack, no need for CUDA/drivers/TensorRT installation."
+  JETPACK_FOUND=true
 fi
+# Clean up the temporary file
+rm /tmp/apt_error
 
-if (JETPACK_FOUND) # Handle Jetson installation:
-    if (TAR_SPECIFIED)
+if $JETPACK_FOUND; then# Handle Jetson installation:
+    if $TAR_SPECIFIED; then
         sudo tar -xvf "$TAR_FILE_PATH" -C /
         cd /opt/nvidia/deepstream/deepstream-6.2
         sudo ./install.sh
@@ -120,7 +129,7 @@ else # Handle non-Jetson installation: (dGPU platform)
     sudo apt-get install cuda-toolkit-11-8
 
     # NVIDIA driver 525.85.12
-    if (RUN_SPECIFIED)
+    if $RUN_SPECIFIED; then
         # kill services prior to installation of driver
         sudo service gdm stop 
         sudo service lightdm stop 
@@ -143,7 +152,7 @@ else # Handle non-Jetson installation: (dGPU platform)
     python3-libnvinfer=8.5.2-1+cuda11.8 python3-libnvinfer-dev=8.5.2-1+cuda11.8
 
     # Finally, unpack DeepStream tar file.
-    if (TAR_SPECIFIED)
+    if $TAR_SPECIFIED; then
         sudo tar -xvf "$TAR_FILE_PATH" -C /
         cd /opt/nvidia/deepstream/deepstream-6.2
         sudo ./install.sh

@@ -17,6 +17,7 @@ For more information on NVIDIA's DeepStream SDK and elements to be used in conju
   - [Improved inference and visualization of 8 videos with capped framerates and frame skipping](#6-improved-inference-and-visualization-of-8-videos-with-capped-framerates-and-frame-skipping)
   - [Inference and visualization using a cloud model](#7-inference-and-visualization-using-a-cloud-model)
   - [Inference without visualization (model benchmark) example](#8-inference-without-visualization-model-benchmark-example)
+  - [Inference and visualization with tracking](#9-inference-and-visualization-with-tracking)
 - [Plugin Properties](#plugin-properties)
 - [Installation](#dependencies)
 
@@ -162,7 +163,11 @@ Clone the repository:
 
 Enter the directory:
 
-```cd dg_gstreamer_plugin/dgaccelerator``` ,
+```cd dg_gstreamer_plugin``` ,
+
+Update the submodule:
+
+```git submodule update --init```.
 > We have provided a shell script to install the above [dependencies](#dependencies). 
 >
 > **If you already have DeepStream and OpenCV installed, please skip to [building the plugin](#build-the-plugin).**
