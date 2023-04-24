@@ -98,6 +98,13 @@ gst-launch-1.0 nvurisrcbin uri=file://<video-file-location> ! m.sink_0 nvstreamm
 ```
 Note the addition of ```drop-frames=false```, as we don't care about syncing to real-time. This pipeline is also useful for finding the maximum processing speed of a model.
 
+### 9. Inference and visualization with tracking
+```sh
+gst-launch-1.0 nvurisrcbin uri=file://<video-file-location> ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator server_ip=<server-ip> model-name=<model-name> drop-frames=false ! nvtracker ll-lib-file=/opt/nvidia/deepstream/deepstream/lib/libnvds_nvmultiobjecttracker.so ! nvvideoconvert ! nvdsosd ! queue ! nvegltransform ! nveglglessink enable-last-sample=0
+```
+![1videoInferenceTracking](https://user-images.githubusercontent.com/126506976/234064084-11fdc31a-97dc-491b-a651-132823f5285e.png)
+
+Here, this pipeline uses a default ```nvtracker``` configuration. It can be configured by modifying the properties ```ll-config-file``` and ```ll-lib-file``` in nvtracker.
 ***
 
 ### Plugin Properties

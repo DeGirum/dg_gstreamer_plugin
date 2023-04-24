@@ -46,8 +46,8 @@
 /* Package and library details required for plugin_init */
 #define PACKAGE        "dgaccelerator"
 #define VERSION        "1.0"
-#define LICENSE        "LGPL"
-#define DESCRIPTION    "This plugin is for pipelines that connect to DeGirum's AI inference models."
+#define LICENSE        "MIT"
+#define DESCRIPTION    "This plugin permits DeepStream pipelines to connect to DeGirum's AI inference models."
 #define BINARY_PACKAGE "NVIDIA DeepStream 3rdparty IP integration"
 #define URL            "http://degirum.ai/"
 
