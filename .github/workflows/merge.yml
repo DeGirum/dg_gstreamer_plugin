@@ -1,0 +1,21 @@
+#
+# DeGirum GitHub starter workflow
+# Copyright 2023 DeGirum Corporation
+#
+# Merge workflow: configure dependencies, build plugin, and runs tests
+#
+
+name: CI Merge
+
+on:
+  # run this action on pull requests to main branch
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Hello
+        run: echo "Hello World"
