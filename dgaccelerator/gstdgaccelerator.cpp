@@ -32,14 +32,11 @@
 #include <ostream>
 #include <sstream>
 #include <string>
-#include "dg_tracing_facility.h"
 
 GST_DEBUG_CATEGORY_STATIC( gst_dgaccelerator_debug );
 #define GST_CAT_DEFAULT gst_dgaccelerator_debug
 #define USE_EGLIMAGE    1
 static GQuark _dsmeta_quark = 0;
-
-DG_TRC_GROUP_DEF( DgAccelerator )
 
 /* Enum to identify properties */
 enum
@@ -307,7 +304,6 @@ static void gst_dgaccelerator_init( GstDgAccelerator *dgaccelerator )
 	dgaccelerator->model_name = const_cast< char * >( DEFAULT_MODEL_NAME );
 	dgaccelerator->server_ip = const_cast< char * >( DEFAULT_SERVER_IP );
 	dgaccelerator->box_color = DEFAULT_BOX_COLOR;
-
 	dgaccelerator->drop_frames = DEFAULT_DROP_FRAMES;
 
 	/* This quark is required to identify NvDsMeta when iterating through
@@ -633,8 +629,6 @@ static GstFlowReturn get_converted_mat(
 	gint input_width,
 	gint input_height )
 {
-	DG_TRC_BLOCK( DgAccelerator, get_converted_mat, DGTrace::lvlBasic );
-
 	NvBufSurfTransform_Error err;
 	NvBufSurfTransformConfigParams transform_config_params;
 	NvBufSurfTransformParams transform_params;
@@ -785,8 +779,6 @@ error:
  */
 static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, GstBuffer *inbuf )
 {
-	DG_TRC_BLOCK( DgAccelerator, gst_dgaccelerator_transform_ip, DGTrace::lvlBasic );
-
 	// initializes NVIDIA buffer and metadata variables.
 	GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR( btrans );
 	GstMapInfo in_map_info;
@@ -862,9 +854,6 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		/* Attach the metadata for the full frame */
 		attach_metadata_full_frame( dgaccelerator, frame_meta, scale_ratio, output, i );
 		i++;
-
-		// frees the output and returns the GstFlowReturn
-		// free (output);
 	}
 	flow_ret = GST_FLOW_OK;
 
@@ -884,8 +873,6 @@ static void attach_metadata_full_frame(
 	DgAcceleratorOutput *output,
 	guint batch_id )
 {
-	DG_TRC_BLOCK( DgAccelerator, attach_metadata_full_frame, DGTrace::lvlBasic );
-
 	NvDsBatchMeta *batch_meta = frame_meta->base_meta.batch_meta;
 	NvDsObjectMeta *object_meta = NULL;
 	static gchar font_name[] = "Serif";

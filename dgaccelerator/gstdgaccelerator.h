@@ -133,11 +133,12 @@ struct _GstDgAccelerator
 
 	// Box Color
 	GstDgAcceleratorBoxColor box_color;
-	// box color converted
+
+	// Box Color converted into NvOSD_ColorParams
 	NvOSD_ColorParams color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
 };
 
-// Boiler plate stuff
+// Boilerplate
 struct _GstDgAcceleratorClass
 {
 	GstBaseTransformClass parent_class;
