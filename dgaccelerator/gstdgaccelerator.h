@@ -47,7 +47,7 @@
 #define PACKAGE        "dgaccelerator"
 #define VERSION        "1.0"
 #define LICENSE        "LGPL"
-#define DESCRIPTION    "This plugin is for pipelines that connect to DeGirum's AI inference models."
+#define DESCRIPTION    "This plugin permits DeepStream pipelines to connect to DeGirum's AI inference models."
 #define BINARY_PACKAGE "NVIDIA DeepStream 3rdparty IP integration"
 #define URL            "http://degirum.ai/"
 
@@ -133,11 +133,12 @@ struct _GstDgAccelerator
 
 	// Box Color
 	GstDgAcceleratorBoxColor box_color;
-	// box color converted
+
+	// Box Color converted into NvOSD_ColorParams
 	NvOSD_ColorParams color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
 };
 
-// Boiler plate stuff
+// Boilerplate
 struct _GstDgAcceleratorClass
 {
 	GstBaseTransformClass parent_class;

@@ -20,6 +20,8 @@
  * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
  * DEALINGS IN THE SOFTWARE.
  *
+ * This software contains source code provided by NVIDIA Corporation.
+ *
  */
 
 #include "dgaccelerator_lib.h"
@@ -30,12 +32,9 @@
 #include "client/dg_client.h"
 #include "dg_file_utilities.h"
 #include "dg_model_api.h"
-#include "dg_tracing_facility.h"
 #include "json.hpp"
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
-
-DG_TRC_GROUP_DEF( DgAcceleratorLib )
 
 using json_ld = nlohmann::basic_json< std::map, std::vector, std::string, bool, std::int64_t, std::uint64_t, long double >;
 
@@ -114,8 +113,6 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 
 	// Callback function for parsing the model inference data for a frame
 	auto callback = [ ctx ]( const json &response, const std::string &fr ) {
-		DG_TRC_BLOCK( DgAcceleratorLib, callback, DGTrace::lvlBasic );
-
 		unsigned int index = std::stoi( fr );  // Index of the Output struct to fill
 		// Reset the output struct:
 		std::memset( out[ index ], 0, sizeof( DgAcceleratorObject ) );
@@ -133,8 +130,6 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 				std::string label = newresp[ "label" ];
 				int category_id = newresp[ "category_id" ].get< int >();
 				long double score = newresp[ "score" ].get< long double >();
-				// std::cout << label << " " << category_id << " " << score;
-				// std::cout << " " << bbox[0]<< " "<< bbox[1]<< " "<< bbox[2]<< " "<< bbox[3] << "\n";
 				out[ index ]->object[ i ] = ( DgAcceleratorObject ){
 					std::roundf( bbox[ 0 ] ),              // left
 					std::roundf( bbox[ 1 ] ),              // top
@@ -150,14 +145,11 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 			failed = true;
 			failReason = response.dump();
 		}
-		// Now, all of the detected objects in the frame are inside the out struct
-		// std::cout << "Finished work on object with frame index: " << index << "\n";
-
 		framesProcessed++;
 		diff--;  // Decrement # of frames waiting to be processed
 	};
 
-	// Initialize the model with the parameters
+	// Initialize the model with the parameters. Internal frame queue size set to 48
 	ctx->model.reset( new DG::AIModelAsync( serverIP, modelNameStr, callback, mparams, 48u ) );
 
 	std::cout << "\nMODEL SUCCESSFULLY INITIALIZED\n\n";
@@ -172,8 +164,6 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 // Gets called for each frame, outputs objects in a DgAcceleratorOutput
 DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char *data )
 {
-	DG_TRC_BLOCK( DgAcceleratorLib, DgAcceleratorProcess, DGTrace::lvlBasic );
-
 	diff++;  // Increment # of frames waiting to be processed
 
 	// Immediately need to add to curIndex so that the circular buffer can keep going
@@ -207,12 +197,10 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 		// This passes the data buffer and the current frame output object index to work on
 		frameMat.release();
 	}
-	// std::cout << "Returning object with current frame index: " << curFrameIndex << "\n";
 	return out[ curFrameIndex ];
 
 skip:
 	// Reach here if the model can't keep up with all the incoming frames
-	DG_TRC_POINT( DgAcceleratorLib, ProcessSkip, DGTrace::lvlBasic );
 	std::cout << "Skipping frame due to diff of " << diff << "\n";
 	std::cout << "If this happens too often, lower the incoming framerate of streams and/or the number of streams!\n";
 	diff--;
