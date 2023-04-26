@@ -1,21 +1,49 @@
 #
-# DeGirum GitHub starter workflow
+# DgAccelerator plugin PR workflow
 # Copyright 2023 DeGirum Corporation
 #
-# Merge workflow: configure dependencies, build plugin, and runs tests
+# Configure and install dependencies, build plugin, and runs tests
 #
 
-name: CI Merge
+name: CI Merge workflow
 
 on:
   # run this action on pull requests to main branch
   pull_request:
-    branches: [main]
-  workflow_dispatch:
+    branches: [ main ]
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: self-hosted 
     steps:
-      - name: Hello
-        run: echo "Hello World"
+    # - name: Install gtest manually
+    #   run: | 
+    #     sudo apt-get install libgtest-dev
+    #     cd /usr/src/gtest 
+    #     sudo cmake CMakeLists.txt 
+    #     sudo make 
+    #     sudo cp lib/*.a /usr/lib 
+    #     sudo ln -s /usr/lib/libgtest.a /usr/local/lib/libgtest.a 
+    #     sudo ln -s /usr/lib/libgtest_main.a /usr/local/lib/libgtest_main.a
+    # now need to get deepstream file
+    # - name: Download DeepStream tbz2 file
+    #   run: wget https://developer.download.nvidia.com/assets/Deepstream/DeepStream_6.2/deepstream_sdk_v6.2.0_x86_64.tbz2?t=eyJscyI6InJlZiIsImxzZCI6IlJFRi1kb2NzLm52aWRpYS5jb20vIn0=
+    # call installDependencies.sh with the path to the file...
+    # - name: Install Dependencies
+    #   run: ./installDependencies.sh deepstream_sdk_v6.2.0_x86_64.tbz2
+
+    # Get here after installing all dependencies
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Configure the build
+      run: |
+        mkdir build 
+        cd build 
+        cmake ..
+    - name: Install the plugin
+      run: |
+        cd build 
+        sudo cmake --build . --target install
+
+    - name: Run Test
+      run: gst-inspect-1.0 dgaccelerator
