@@ -35,6 +35,9 @@ jobs:
     # Get here after installing all dependencies
     - name: Checkout code
       uses: actions/checkout@v3
+      with:
+        submodules: 'recursive'
+
     - name: Configure the build
       run: |
         mkdir build 
