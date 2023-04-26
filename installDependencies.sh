@@ -67,17 +67,18 @@ sudo apt install -y \
     gstreamer1.0-pulseaudio
 
 # Install OpenCV dependencies if OpenCV not found or < 4.2.0
-opencv_version=$(opencv_version)
-if [[ -z "$opencv_version" ]] || [[ "$(dpkg --compare-versions "$opencv_version" lt "4.2.0"; echo $?)" -eq 0 ]]; then
-  pushd $(pwd)
-  cd ~/Documents/
-  wget -O opencv.zip https://github.com/opencv/opencv/archive/4.x.zip
-  unzip opencv.zip
-  mkdir -p build && cd build
-  cmake ../opencv-4.x
-  cmake --build .
-  popd
-fi
+# opencv_version=$(opencv_version)
+# if [[ -z "$opencv_version" ]] || [[ "$(dpkg --compare-versions "$opencv_version" lt "4.2.0"; echo $?)" -eq 0 ]]; then
+#   pushd $(pwd)
+#   cd ~/Documents/
+#   wget -O opencv.zip https://github.com/opencv/opencv/archive/4.x.zip
+#   unzip opencv.zip
+#   mkdir -p build && cd build
+#   cmake ../opencv-4.x
+#   cmake --build .
+#   popd
+# fi
+sudo apt-get install libopencv-dev
 
 # Install DeepStream dependencies
 sudo apt install -y \
@@ -128,7 +129,7 @@ else
   sudo apt-key adv --fetch-keys https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/3bf863cc.pub
   sudo add-apt-repository "deb https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2004/x86_64/ /"
   sudo apt-get update
-  sudo apt-get install cuda-toolkit-11-8
+  sudo apt-get install -y cuda-toolkit-11-8
 
   # NVIDIA driver 525.85.12
   if $RUN_SPECIFIED; then
