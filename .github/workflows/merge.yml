@@ -16,29 +16,29 @@ jobs:
   build:
     runs-on: [self-hosted, dg-ubuntu-20.04-nv-02]
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-      with:
-        submodules: 'recursive'
-    -name: Print working dir
-      run: pwd
-    -name: Print LD_LIBRARY_PATH
-      run: echo $LD_LIBRARY_PATH
-    -name: print all the environment variables
-      run: printenv
-    - name: Configure the build, remove cache if exists
-      run: |
-        mkdir build 
-        cd build
-        rm CMakeCache.txt || true
-        cmake ..
-    - name: Build the plugin
-      run: |
-        cd build 
-        cmake --build .
-    - name: Install the plugin
-      run: |
-        cd build 
-        cmake --install .
-    - name: Verify Installation
-      run: gst-inspect-1.0 dgaccelerator
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      - name: Print working dir
+        run: pwd
+      - name: Print LD_LIBRARY_PATH
+        run: echo $LD_LIBRARY_PATH
+      - name: Print all the environment variables
+        run: printenv
+      - name: Configure the build, remove cache if exists
+        run: |
+          mkdir build 
+          cd build
+          rm -f CMakeCache.txt
+          cmake ..
+      - name: Build the plugin
+        run: |
+          cd build 
+          cmake --build .
+      - name: Install the plugin
+        run: |
+          cd build 
+          cmake --install .
+      - name: Verify Installation
+        run: gst-inspect-1.0 dgaccelerator
