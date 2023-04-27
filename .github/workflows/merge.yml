@@ -16,23 +16,6 @@ jobs:
   build:
     runs-on: [self-hosted, dg-ubuntu-20.04-nv-02]
     steps:
-    # - name: Install gtest manually
-    #   run: | 
-    #     sudo apt-get install libgtest-dev
-    #     cd /usr/src/gtest 
-    #     sudo cmake CMakeLists.txt 
-    #     sudo make 
-    #     sudo cp lib/*.a /usr/lib 
-    #     sudo ln -s /usr/lib/libgtest.a /usr/local/lib/libgtest.a 
-    #     sudo ln -s /usr/lib/libgtest_main.a /usr/local/lib/libgtest_main.a
-    # now need to get deepstream file
-    # - name: Download DeepStream tbz2 file
-    #   run: wget https://developer.download.nvidia.com/assets/Deepstream/DeepStream_6.2/deepstream_sdk_v6.2.0_x86_64.tbz2?t=eyJscyI6InJlZiIsImxzZCI6IlJFRi1kb2NzLm52aWRpYS5jb20vIn0=
-    # call installDependencies.sh with the path to the file...
-    # - name: Install Dependencies
-    #   run: ./installDependencies.sh deepstream_sdk_v6.2.0_x86_64.tbz2
-
-    # Get here after installing all dependencies
     - name: Checkout code
       uses: actions/checkout@v3
       with:
@@ -43,10 +26,13 @@ jobs:
         mkdir build 
         cd build 
         cmake ..
+    - name: Build the plugin
+      run: |
+        cd build 
+        cmake --build .
     - name: Install the plugin
       run: |
         cd build 
-        sudo cmake --build . --target install
-
-    - name: Inspect plugin
+        cmake --install .
+    - name: Verify Installation
       run: gst-inspect-1.0 dgaccelerator
