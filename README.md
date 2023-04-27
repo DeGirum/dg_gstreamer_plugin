@@ -201,7 +201,8 @@ To build the plugin, while within the directory of the cloned repository, run
 ```
 mkdir build && cd build
 cmake ..
-sudo cmake --build . --target install
+cmake --build . 
+sudo cmake --install .
 ```
 
 Now, GStreamer pipelines have access to the element ```dgaccelerator``` for accelerating video processing tasks using NVIDIA DeepStream.

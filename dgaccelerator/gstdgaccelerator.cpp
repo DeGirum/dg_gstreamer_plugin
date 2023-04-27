@@ -1,30 +1,30 @@
-/**
- * Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
- * Copyright (c) 2023 Stephan Sokolov < stephan@degirum.com >
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- *
- * This software contains source code provided by NVIDIA Corporation.
- *
- */
+//////////////////////////////////////////////////////////////////////
+///  \file  gstdgaccelerator.cpp
+///  \brief DgAccelerator wrapper element implementation
+///
+///  Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
+///  Copyright 2023 DeGirum Corporation
+///
+///  Permission is hereby granted, free of charge, to any person obtaining a
+///  copy of this software and associated documentation files (the "Software"),
+///  to deal in the Software without restriction, including without limitation
+///  the rights to use, copy, modify, merge, publish, distribute, sublicense,
+///  and/or sell copies of the Software, and to permit persons to whom the
+///  Software is furnished to do so, subject to the following conditions:
+///
+///  The above copyright notice and this permission notice shall be included in
+///  all copies or substantial portions of the Software.
+///
+///  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+///  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+///  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+///  THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+///  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+///  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+///  DEALINGS IN THE SOFTWARE.
+///
+///  This software contains source code provided by NVIDIA Corporation.
 
-#include "gstdgaccelerator.h"
 #include <string.h>
 #include <sys/time.h>
 #include <fstream>
@@ -33,12 +33,14 @@
 #include <sstream>
 #include <string>
 
+#include "gstdgaccelerator.h"
+
 GST_DEBUG_CATEGORY_STATIC( gst_dgaccelerator_debug );
 #define GST_CAT_DEFAULT gst_dgaccelerator_debug
 #define USE_EGLIMAGE    1
 static GQuark _dsmeta_quark = 0;
 
-/* Enum to identify properties */
+// Enum to identify properties
 enum
 {
 	PROP_0,
@@ -73,7 +75,7 @@ enum
 		_errtype;                                                                                                                                \
 	} )
 
-/* DEFAULT PROPERTY VALUES */
+// DEFAULT PROPERTY VALUES
 #define DEFAULT_UNIQUE_ID         15
 #define DEFAULT_PROCESSING_WIDTH  512
 #define DEFAULT_PROCESSING_HEIGHT 512
@@ -112,8 +114,8 @@ enum
 		}                                                                                                                   \
 	} while( 0 )
 
-/* By default NVIDIA Hardware allocated memory flows through the pipeline. We
- * will be processing on this type of memory only. */
+// By default NVIDIA Hardware allocated memory flows through the pipeline. We
+// will be processing on this type of memory only
 #define GST_CAPS_FEATURE_MEMORY_NVMM "memory:NVMM"
 
 // Templates for sink and source pad
@@ -145,8 +147,11 @@ static void attach_metadata_full_frame(
 	DgAcceleratorOutput *output,
 	guint batch_id );
 
-// Box Color get type function
 #define GST_TYPE_DGACCELERATOR_BOX_COLOR ( gst_dgaccelerator_box_color_get_type() )
+
+
+/// \brief Box Color get type function
+/// \return the color of the box
 static GType gst_dgaccelerator_box_color_get_type( void )
 {
 	static GType dgaccelerator_box_color_type = 0;
@@ -168,21 +173,22 @@ static GType gst_dgaccelerator_box_color_get_type( void )
 	return dgaccelerator_box_color_type;
 }
 
-// Installs the object and BaseTransform properties along with pads
+/// \brief Installs the object and BaseTransform properties along with pads
+/// \param[in] klass gstreamer boilerplate input class
 static void gst_dgaccelerator_class_init( GstDgAcceleratorClass *klass )
 {
 	GObjectClass *gobject_class;
 	GstElementClass *gstelement_class;
 	GstBaseTransformClass *gstbasetransform_class;
 
-	/* Indicates we want to use DS buf api */
+	// Indicates we want to use DS buf api
 	g_setenv( "DS_NEW_BUFAPI", "1", TRUE );
 
 	gobject_class = (GObjectClass *)klass;
 	gstelement_class = (GstElementClass *)klass;
 	gstbasetransform_class = (GstBaseTransformClass *)klass;
 
-	/* Overide base class functions */
+	// Overide base class functions
 	gobject_class->set_property = GST_DEBUG_FUNCPTR( gst_dgaccelerator_set_property );
 	gobject_class->get_property = GST_DEBUG_FUNCPTR( gst_dgaccelerator_get_property );
 
@@ -192,7 +198,7 @@ static void gst_dgaccelerator_class_init( GstDgAcceleratorClass *klass )
 
 	gstbasetransform_class->transform_ip = GST_DEBUG_FUNCPTR( gst_dgaccelerator_transform_ip );
 
-	/* Install properties */
+	// Install properties
 	g_object_class_install_property(
 		gobject_class,
 		PROP_UNIQUE_ID,
@@ -277,11 +283,11 @@ static void gst_dgaccelerator_class_init( GstDgAcceleratorClass *klass )
 			G_MAXUINT,
 			0,
 			GParamFlags( G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_READY ) ) );
-	/* Set sink and src pad capabilities */
+	// Set sink and src pad capabilities
 	gst_element_class_add_pad_template( gstelement_class, gst_static_pad_template_get( &gst_dgaccelerator_src_template ) );
 	gst_element_class_add_pad_template( gstelement_class, gst_static_pad_template_get( &gst_dgaccelerator_sink_template ) );
 
-	/* Set metadata describing the element */
+	// Set metadata describing the element
 	gst_element_class_set_details_simple(
 		gstelement_class,
 		"DgAccelerator plugin",
@@ -289,14 +295,20 @@ static void gst_dgaccelerator_class_init( GstDgAcceleratorClass *klass )
 		"Uses NVIDIA's 3rdparty algorithm wrapper to process video frames",
 		"Stephan Sokolov < stephan@degirum.ai >" );
 }
-// Initialize the element. Set the BaseTransform properties to work in in-place mode
+/// \brief Initializes the GstDgAccelerator element and sets the BaseTransform properties for in-place mode.
+///
+/// This function sets up the GstDgAccelerator instance and configures the underlying BaseTransform
+/// properties to work in in-place mode, allowing the element to process data without additional memory copying.
+///
+/// \param[in] dgaccelerator The pointer to the GstDgAccelerator instance that will be initialized.
+///
 static void gst_dgaccelerator_init( GstDgAccelerator *dgaccelerator )
 {
 	GstBaseTransform *btrans = GST_BASE_TRANSFORM( dgaccelerator );
 	gst_base_transform_set_in_place( GST_BASE_TRANSFORM( btrans ), TRUE );
 	gst_base_transform_set_passthrough( GST_BASE_TRANSFORM( btrans ), TRUE );
 
-	/* Initialize all property variables to default values */
+	// Initialize all property variables to default values
 	dgaccelerator->unique_id = DEFAULT_UNIQUE_ID;
 	dgaccelerator->processing_width = DEFAULT_PROCESSING_WIDTH;
 	dgaccelerator->processing_height = DEFAULT_PROCESSING_HEIGHT;
@@ -306,12 +318,22 @@ static void gst_dgaccelerator_init( GstDgAccelerator *dgaccelerator )
 	dgaccelerator->box_color = DEFAULT_BOX_COLOR;
 	dgaccelerator->drop_frames = DEFAULT_DROP_FRAMES;
 
-	/* This quark is required to identify NvDsMeta when iterating through
-	 * the buffer metadatas */
+	// This quark is required to identify NvDsMeta when iterating through
+	// the buffer metadatas
 	if( !_dsmeta_quark )
 		_dsmeta_quark = g_quark_from_static_string( NVDS_META_STRING );
 }
-// Set property function
+///
+/// \brief Sets the value of the specified property for the GstDgAccelerator object
+///
+/// This function is called when a property is set for the GstDgAccelerator object. It takes in the
+/// property ID, value, and property specification, and sets the corresponding property for the object.
+///
+/// \param[in] object Pointer to the GObject instance of GstDgAccelerator
+/// \param[in] prop_id The ID of the property to set
+/// \param[in] value The new value to set for the property
+/// \param[in] pspec The GParamSpec of the property
+///
 static void gst_dgaccelerator_set_property( GObject *object, guint prop_id, const GValue *value, GParamSpec *pspec )
 {
 	GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR( object );
@@ -374,7 +396,18 @@ static void gst_dgaccelerator_set_property( GObject *object, guint prop_id, cons
 	}
 }
 
-// Get property function
+///
+/// \brief Retrieves the value of the specified property for the GstDgAccelerator object
+///
+/// This function is called when a property value is requested for the GstDgAccelerator object. It takes
+/// in the property ID and property specification, and returns the value of the corresponding property
+/// through the GValue parameter.
+///
+/// \param[in] object Pointer to the GObject instance of GstDgAccelerator
+/// \param[in] prop_id The ID of the property to retrieve
+/// \param[out] value The retrieved value of the property
+/// \param[in] pspec The GParamSpec of the property
+///
 static void gst_dgaccelerator_get_property( GObject *object, guint prop_id, GValue *value, GParamSpec *pspec )
 {
 	GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR( object );
@@ -415,10 +448,13 @@ static void gst_dgaccelerator_get_property( GObject *object, guint prop_id, GVal
 	}
 }
 
-/**
- * Initialize all the parameters and CUDA stream.
- * Called as a result of BaseTransform class changing states in pipeline
- */
+/// \brief Initializes all the parameters and CUDA stream for the GstDgAccelerator.
+///
+/// This function is called as a result of the BaseTransform class changing states in the pipeline.
+/// It ensures that the GstDgAccelerator is properly set up and ready for processing.
+///
+/// \param[in] btrans The pointer to the GstBaseTransform instance that will be initialized.
+///
 static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 {
 	GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR( btrans );
@@ -494,8 +530,8 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 		break;
 	}
 
-	/* An intermediate buffer for NV12/RGBA to BGR conversion  will be
-	 * required. Can be skipped if custom algorithm can work directly on NV12/RGBA. */
+	// An intermediate buffer for NV12/RGBA to BGR conversion  will be
+	// required. Can be skipped if custom algorithm can work directly on NV12/RGBA.
 	create_params.gpuId = dgaccelerator->gpu_id;
 	create_params.width = dgaccelerator->processing_width;
 	create_params.height = dgaccelerator->processing_height;
@@ -518,15 +554,15 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 		goto error;
 	}
 
-	/* Create host memory for storing converted/scaled interleaved RGB data */
+	// Create host memory for storing converted/scaled interleaved RGB data
 	CHECK_CUDA_STATUS(
 		cudaMallocHost( &dgaccelerator->host_rgb_buf, dgaccelerator->processing_width * dgaccelerator->processing_height * RGB_BYTES_PER_PIXEL ),
 		"Could not allocate cuda host buffer" );
 
 	GST_DEBUG_OBJECT( dgaccelerator, "allocated cuda buffer %p \n", dgaccelerator->host_rgb_buf );
 
-	/* CV Mat containing interleaved RGB data. This call does not allocate memory.
-	 * It uses host_rgb_buf as data. */
+	// CV Mat containing interleaved RGB data. This call does not allocate memory.
+	// It uses host_rgb_buf as data.
 	dgaccelerator->cvmat = new cv::Mat(
 		dgaccelerator->processing_height,
 		dgaccelerator->processing_width,
@@ -557,7 +593,16 @@ error:
 	return FALSE;
 }
 
-// Stop the element, free memory, deinitialize our library
+///
+/// \brief Stops the GstDgAccelerator element and frees memory
+///
+/// This function is called when the pipeline transitions to the NULL state, which triggers the
+/// stop function of the GstBaseTransform class. The function frees all the memory allocated for
+/// the GstDgAccelerator element and deinitializes the library.
+///
+/// \param[in] btrans Pointer to the GstBaseTransform instance
+/// \return Returns TRUE if the element was stopped successfully, FALSE otherwise
+///
 static gboolean gst_dgaccelerator_stop( GstBaseTransform *btrans )
 {
 	GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR( btrans );
@@ -581,7 +626,7 @@ static gboolean gst_dgaccelerator_stop( GstBaseTransform *btrans )
 
 	GST_DEBUG_OBJECT( dgaccelerator, "deleted CV Mat \n" );
 
-	/* Deinit the algorithm library */
+	// Deinit the algorithm library
 	DgAcceleratorCtxDeinit( dgaccelerator->dgacceleratorlib_ctx );
 	dgaccelerator->dgacceleratorlib_ctx = NULL;
 
@@ -590,13 +635,22 @@ static gboolean gst_dgaccelerator_stop( GstBaseTransform *btrans )
 	return TRUE;
 }
 
-/**
- * Called when source / sink pad capabilities have been negotiated.
- */
+///
+/// \brief Callback function for when source/sink pad capabilities have been negotiated
+///
+/// This function is called when the source/sink pad capabilities have been negotiated, i.e., when
+/// the pads' capabilities are compatible and can be set. It takes in the GstCaps instances for
+/// the input and output pads and returns a boolean indicating whether the negotiation was successful.
+///
+/// \param[in] btrans Pointer to the GstBaseTransform instance
+/// \param[in] incaps Pointer to the GstCaps instance for the input pad
+/// \param[in] outcaps Pointer to the GstCaps instance for the output pad
+/// \return Returns TRUE if the pad capabilities were successfully negotiated, FALSE otherwise
+///
 static gboolean gst_dgaccelerator_set_caps( GstBaseTransform *btrans, GstCaps *incaps, GstCaps *outcaps )
 {
 	GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR( btrans );
-	/* Save the input video information, since this will be required later. */
+	// Save the input video information, since this will be required later.
 	gst_video_info_from_caps( &dgaccelerator->video_info, incaps );
 
 	return TRUE;
@@ -605,29 +659,35 @@ error:
 	return FALSE;
 }
 
-/**
- * Scale the entire frame to the processing resolution maintaining aspect ratio.
- * Or crop and scale objects to the processing resolution maintaining the aspect
- * ratio. Remove the padding required by hardware and convert from RGBA to RGB
- * using openCV. These steps can be skipped if the algorithm can work with
- * padded data and/or can work with RGBA.
- *
- * The input NvBufSurface object is modified in-place to contain the output
- * buffer. The function uses NVIDIA's NvBufSurfTransform API to perform
- * scaling, format conversion, and cropping, as well as OpenCV's cvtColor
- * function to convert the RGBA format to BGR format. The input buffer is
- * cropped according to the provided crop_rect_params rectangle, and the aspect
- * ratio is maintained while scaling to a destination resolution specified by
- * processing_width and processing_height parameters of dgaccelerator structure.
- */
+///
+/// \brief Scales the entire frame or crops and scales objects while maintaining aspect ratio
+///
+/// This function scales the entire frame or crops and scales objects to the processing resolution while
+/// maintaining aspect ratio. It removes the padding required by hardware and converts the data from RGBA to RGB
+/// using OpenCV, unless the algorithm can work with padded data and/or can work with RGBA. The input NvBufSurface
+/// object is modified in-place to contain the output buffer. The function uses NVIDIA's NvBufSurfTransform API
+/// to perform scaling, format conversion, and cropping, as well as OpenCV's cvtColor function to convert the RGBA
+/// format to BGR format. The input buffer is cropped according to the provided crop_rect_params rectangle, and
+/// the aspect ratio is maintained while scaling to a destination resolution specified by the processing_width
+/// and processing_height parameters of the dgaccelerator structure.
+///
+/// \param[in] dgaccelerator Pointer to the GstDgAccelerator instance
+/// \param[in] input_buf Pointer to the input NvBufSurface object
+/// \param[in] idx Index of the surface
+/// \param[in] crop_rect_params Pointer to the NvOSD_RectParams struct representing the crop rectangle parameters
+/// \param[out] ratio The aspect ratio of the input buffer
+/// \param[in] input_width Width of the input buffer
+/// \param[in] input_height Height of the input buffer
+/// \return Returns a GstFlowReturn value indicating the status of the function
+///
 static GstFlowReturn get_converted_mat(
-	GstDgAccelerator *dgaccelerator,
-	NvBufSurface *input_buf,
-	gint idx,
-	NvOSD_RectParams *crop_rect_params,
-	gdouble &ratio,
-	gint input_width,
-	gint input_height )
+GstDgAccelerator *dgaccelerator,
+NvBufSurface *input_buf,
+gint idx,
+NvOSD_RectParams *crop_rect_params,
+gdouble &ratio,
+gint input_width,
+gint input_height )
 {
 	NvBufSurfTransform_Error err;
 	NvBufSurfTransformConfigParams transform_config_params;
@@ -646,7 +706,7 @@ static GstFlowReturn get_converted_mat(
 	gint src_width = GST_ROUND_DOWN_2( (unsigned int)crop_rect_params->width );
 	gint src_height = GST_ROUND_DOWN_2( (unsigned int)crop_rect_params->height );
 
-	/* Maintain aspect ratio */
+	// Maintain aspect ratio
 	double hdest = dgaccelerator->processing_width * src_height / (double)src_width;
 	double wdest = dgaccelerator->processing_height * src_width / (double)src_height;
 	guint dest_width, dest_height;
@@ -662,13 +722,13 @@ static GstFlowReturn get_converted_mat(
 		dest_height = dgaccelerator->processing_height;
 	}
 
-	/* Configure transform session parameters for the transformation */
+	// Configure transform session parameters for the transformation
 	transform_config_params.compute_mode = NvBufSurfTransformCompute_Default;
 	transform_config_params.gpu_id = dgaccelerator->gpu_id;
 	transform_config_params.cuda_stream = dgaccelerator->cuda_stream;
 
-	/* Set the transform session parameters for the conversions executed in this
-	 * thread. */
+	// Set the transform session parameters for the conversions executed in this
+	// thread.
 	err = NvBufSurfTransformSetSessionParams( &transform_config_params );
 	if( err != NvBufSurfTransformError_Success )
 	{
@@ -676,7 +736,7 @@ static GstFlowReturn get_converted_mat(
 		goto error;
 	}
 
-	/* Calculate scaling ratio while maintaining aspect ratio */
+	// Calculate scaling ratio while maintaining aspect ratio
 	ratio = MIN( 1.0 * dest_width / src_width, 1.0 * dest_height / src_height );
 
 	if( ( crop_rect_params->width == 0 ) || ( crop_rect_params->height == 0 ) )
@@ -688,45 +748,45 @@ static GstFlowReturn get_converted_mat(
 #ifdef __aarch64__
 	if( ratio <= 1.0 / 16 || ratio >= 16.0 )
 	{
-		/* Currently cannot scale by ratio > 16 or < 1/16 for Jetson */
+		// Currently cannot scale by ratio > 16 or < 1/16 for Jetson
 		goto error;
 	}
 #endif
-	/* Set the transform ROIs for source and destination */
+	// Set the transform ROIs for source and destination
 	src_rect = { (guint)src_top, (guint)src_left, (guint)src_width, (guint)src_height };
 	dst_rect = { 0, 0, (guint)dest_width, (guint)dest_height };
 
-	/* Set the transform parameters */
+	// Set the transform parameters
 	transform_params.src_rect = &src_rect;
 	transform_params.dst_rect = &dst_rect;
 	transform_params.transform_flag = NVBUFSURF_TRANSFORM_FILTER | NVBUFSURF_TRANSFORM_CROP_SRC | NVBUFSURF_TRANSFORM_CROP_DST;
 	transform_params.transform_filter = NvBufSurfTransformInter_Default;
 
-	/* Memset the memory */
+	// Memset the memory
 	NvBufSurfaceMemSet( dgaccelerator->inter_buf, 0, 0, 0 );
 
 	GST_DEBUG_OBJECT( dgaccelerator, "Scaling and converting input buffer\n" );
 
-	/* Transformation scaling+format conversion if any. */
+	// Transformation scaling+format conversion if any.
 	err = NvBufSurfTransform( &ip_surf, dgaccelerator->inter_buf, &transform_params );
 	if( err != NvBufSurfTransformError_Success )
 	{
 		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "NvBufSurfTransform failed with error %d while converting buffer", err ), ( NULL ) );
 		goto error;
 	}
-	/* Map the buffer so that it can be accessed by CPU */
+	// Map the buffer so that it can be accessed by CPU
 	if( NvBufSurfaceMap( dgaccelerator->inter_buf, 0, 0, NVBUF_MAP_READ ) != 0 )
 	{
 		goto error;
 	}
 	if( dgaccelerator->inter_buf->memType == NVBUF_MEM_SURFACE_ARRAY )
 	{
-		/* Cache the mapped data for CPU access */
+		// Cache the mapped data for CPU access
 		NvBufSurfaceSyncForCpu( dgaccelerator->inter_buf, 0, 0 );
 	}
 
-	/* Use openCV to remove padding and convert RGBA to BGR. Can be skipped if
-	 * algorithm can handle padded RGBA data. */
+	// Use openCV to remove padding and convert RGBA to BGR. Can be skipped if
+	// algorithm can handle padded RGBA data.
 
 	in_mat = cv::Mat(
 		dgaccelerator->processing_height,
@@ -749,8 +809,8 @@ static GstFlowReturn get_converted_mat(
 	if( dgaccelerator->is_integrated )
 	{
 #ifdef __aarch64__
-		/* To use the converted buffer in CUDA, create an EGLImage and then use
-		 * CUDA-EGL interop APIs */
+		// To use the converted buffer in CUDA, create an EGLImage and then use
+		// CUDA-EGL interop APIs
 		if( USE_EGLIMAGE )
 		{
 			if( NvBufSurfaceMapEglImage( dgaccelerator->inter_buf, 0 ) != 0 )
@@ -758,11 +818,11 @@ static GstFlowReturn get_converted_mat(
 				goto error;
 			}
 
-			/* dgaccelerator->inter_buf->surfaceList[0].mappedAddr.eglImage
-			 * Use interop APIs cuGraphicsEGLRegisterImage and
-			 * cuGraphicsResourceGetMappedEglFrame to access the buffer in CUDA */
+			// dgaccelerator->inter_buf->surfaceList[0].mappedAddr.eglImage
+			// Use interop APIs cuGraphicsEGLRegisterImage and
+			// cuGraphicsResourceGetMappedEglFrame to access the buffer in CUDA
 
-			/* Destroy the EGLImage */
+			// Destroy the EGLImage
 			NvBufSurfaceUnMapEglImage( dgaccelerator->inter_buf, 0 );
 		}
 #endif
@@ -773,10 +833,17 @@ error:
 	return GST_FLOW_ERROR;
 }
 
-/**
- * BaseTransform main processing function, called when input buffer received.
- * Transform the buffer in-place, using our static library
- */
+///
+/// \brief Main processing function for the GstDgAccelerator element
+///
+/// This function is called when an input buffer is received by the GstDgAccelerator element. It performs
+/// in-place transformation of the buffer using the static library. The function uses the input buffer
+/// to update the GstBuffer instance in-place.
+///
+/// \param[in] btrans Pointer to the GstBaseTransform instance
+/// \param[in] inbuf Pointer to the input GstBuffer
+/// \return Returns a GstFlowReturn value indicating the status of the function
+///
 static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, GstBuffer *inbuf )
 {
 	// initializes NVIDIA buffer and metadata variables.
@@ -829,13 +896,13 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		frame_meta = (NvDsFrameMeta *)( l_frame->data );
 		NvOSD_RectParams rect_params;
 
-		/* Scale the entire frame to processing resolution */
+		// Scale the entire frame to processing resolution
 		rect_params.left = 0;
 		rect_params.top = 0;
 		rect_params.width = dgaccelerator->video_info.width;
 		rect_params.height = dgaccelerator->video_info.height;
 
-		/* Scale and convert the frame */
+		// Scale and convert the frame
 		if( get_converted_mat(
 				dgaccelerator,
 				surface,
@@ -851,7 +918,7 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		// the metadata for the full frame
 		// Output is a DgAcceleratorOutput object!
 		output = DgAcceleratorProcess( dgaccelerator->dgacceleratorlib_ctx, dgaccelerator->cvmat->data );
-		/* Attach the metadata for the full frame */
+		// Attach the metadata for the full frame
 		attach_metadata_full_frame( dgaccelerator, frame_meta, scale_ratio, output, i );
 		i++;
 	}
@@ -863,15 +930,26 @@ error:
 	return flow_ret;
 }
 
-/**
- * Attach metadata for the processed video frame, using NvDsBatch Meta
- */
+///
+/// \brief Attaches metadata for the processed video frame using NvDsBatch Meta
+///
+/// This function attaches metadata for the processed video frame using NvDsBatch Meta. It takes in the
+/// GstDgAccelerator instance, NvDsFrameMeta instance for the video frame, scale ratio, DgAcceleratorOutput
+/// instance for the output, and batch ID. The function updates the NvDsBatchMeta with the metadata for the
+/// processed video frame.
+///
+/// \param[in] dgaccelerator Pointer to the GstDgAccelerator instance
+/// \param[in] frame_meta Pointer to the NvDsFrameMeta instance for the video frame
+/// \param[in] scale_ratio The scale ratio used for processing the frame
+/// \param[in] output Pointer to the DgAcceleratorOutput instance for the output
+/// \param[in] batch_id The ID of the batch
+///
 static void attach_metadata_full_frame(
-	GstDgAccelerator *dgaccelerator,
-	NvDsFrameMeta *frame_meta,
-	gdouble scale_ratio,
-	DgAcceleratorOutput *output,
-	guint batch_id )
+GstDgAccelerator *dgaccelerator,
+NvDsFrameMeta *frame_meta,
+gdouble scale_ratio,
+DgAcceleratorOutput *output,
+guint batch_id )
 {
 	NvDsBatchMeta *batch_meta = frame_meta->base_meta.batch_meta;
 	NvDsObjectMeta *object_meta = NULL;
@@ -885,13 +963,13 @@ static void attach_metadata_full_frame(
 		NvOSD_RectParams &rect_params = object_meta->rect_params;
 		NvOSD_TextParams &text_params = object_meta->text_params;
 
-		/* Assign bounding box coordinates */
+		// Assign bounding box coordinates
 		rect_params.left = obj->left;
 		rect_params.top = obj->top;
 		rect_params.width = obj->width;
 		rect_params.height = obj->height;
 
-		/* Semi-transparent yellow background */
+		// Semi-transparent yellow background
 		rect_params.has_bg_color = 0;
 		rect_params.bg_color = ( NvOSD_ColorParams ){ 1, 1, 0, 0.4 };
 		// Set box border width
@@ -899,8 +977,8 @@ static void attach_metadata_full_frame(
 		// Set box color
 		rect_params.border_color = dgaccelerator->color;
 
-		/* Scale the bounding boxes proportionally based on how the object/frame was
-		 * scaled during input */
+		// Scale the bounding boxes proportionally based on how the object/frame was
+		// scaled during input
 		rect_params.left /= scale_ratio;
 		rect_params.top /= scale_ratio;
 		rect_params.width /= scale_ratio;
@@ -920,15 +998,15 @@ static void attach_metadata_full_frame(
 
 		object_meta->object_id = UNTRACKED_OBJECT_ID;
 		g_strlcpy( object_meta->obj_label, obj->label, MAX_LABEL_SIZE );
-		/* display_text required heap allocated memory */
+		// display_text required heap allocated memory
 		text_params.display_text = g_strdup( obj->label );
-		/* Display text above the left top corner of the object */
+		// Display text above the left top corner of the object
 		text_params.x_offset = rect_params.left;
 		text_params.y_offset = rect_params.top - 10;
-		/* Set black background for the text */
+		// Set black background for the text
 		text_params.set_bg_clr = 1;
 		text_params.text_bg_clr = ( NvOSD_ColorParams ){ 0, 0, 0, 1 };
-		/* Font face, size and color */
+		// Font face, size and color
 		text_params.font_params.font_name = font_name;
 		text_params.font_params.font_size = 11;
 		text_params.font_params.font_color = ( NvOSD_ColorParams ){ 1, 1, 1, 1 };
@@ -938,7 +1016,14 @@ static void attach_metadata_full_frame(
 	}
 }
 
-// Register everything in the plugin
+///
+/// \brief Initializes the GstDgAccelerator plugin
+///
+/// This function registers all the elements and features provided by the GstDgAccelerator plugin.
+///
+/// \param[in] plugin Pointer to the GstPlugin instance
+/// \return Returns TRUE if the plugin was initialized successfully, FALSE otherwise
+///
 static gboolean dgaccelerator_plugin_init( GstPlugin *plugin )
 {
 	GST_DEBUG_CATEGORY_INIT( gst_dgaccelerator_debug, "dgaccelerator", 0, "dgaccelerator plugin" );

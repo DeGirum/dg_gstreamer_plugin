@@ -42,5 +42,5 @@ jobs:
           cmake --install .
       - name: Verify Installation
         run: | 
-          export LD_LIBRARY_PATH=/opt/nvidia/deepstream/deepstream-6.2/lib/:$LD_LIBRARY_PATH
+          export LD_LIBRARY_PATH=/opt/nvidia/deepstream/deepstream/lib/:$LD_LIBRARY_PATH
           gst-inspect-1.0 dgaccelerator

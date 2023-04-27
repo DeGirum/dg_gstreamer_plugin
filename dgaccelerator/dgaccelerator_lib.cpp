@@ -1,40 +1,44 @@
-/**
- * Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
- * Copyright (c) 2023 Stephan Sokolov < stephan@degirum.com >
- *
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
- * THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- *
- * This software contains source code provided by NVIDIA Corporation.
- *
- */
+//////////////////////////////////////////////////////////////////////
+///  \file  dgaccelerator_lib.cpp
+///  \brief DgAccelerator context for handling inference using Degirum models
+///
+///  Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+///  Copyright 2023 DeGirum Corporation
+///
+///  Permission is hereby granted, free of charge, to any person obtaining a
+///  copy of this software and associated documentation files (the "Software"),
+///  to deal in the Software without restriction, including without limitation
+///  the rights to use, copy, modify, merge, publish, distribute, sublicense,
+///  and/or sell copies of the Software, and to permit persons to whom the
+///  Software is furnished to do so, subject to the following conditions:
+///
+///  The above copyright notice and this permission notice shall be included in
+///  all copies or substantial portions of the Software.
+///
+///  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+///  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+///  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+///  THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+///  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+///  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+///  DEALINGS IN THE SOFTWARE.
+///
+///  This software contains source code provided by NVIDIA Corporation.
 
-#include "dgaccelerator_lib.h"
 #include <stdio.h>
 #include <stdlib.h>
-
 #include <memory>
+
+// OpenCV
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/imgproc/imgproc.hpp"
+
+// Degirum
+#include "dgaccelerator_lib.h"
 #include "client/dg_client.h"
 #include "dg_file_utilities.h"
 #include "dg_model_api.h"
 #include "json.hpp"
-#include "opencv2/highgui/highgui.hpp"
-#include "opencv2/imgproc/imgproc.hpp"
 
 using json_ld = nlohmann::basic_json< std::map, std::vector, std::string, bool, std::int64_t, std::uint64_t, long double >;
 
@@ -61,8 +65,16 @@ struct DgAcceleratorCtx
 	std::unique_ptr< DG::AIModelAsync > model;
 };
 
-// Initializes the model with the given initParams.
-// Sets the callback function for asynchronous operation of inference.
+///
+/// \brief Initializes the DgAccelerator model with the given parameters and sets the callback function
+///
+/// This function initializes the DgAccelerator model with the given parameters using DgAcceleratorInitParams struct.
+/// It also sets the callback function for asynchronous operation of inference. The function returns a pointer to the
+/// DgAcceleratorCtx instance.
+///
+/// \param[in] initParams Pointer to the DgAcceleratorInitParams struct for model initialization
+/// \return Returns a pointer to the DgAcceleratorCtx instance
+///
 DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 {
 	DgAcceleratorCtx *ctx = (DgAcceleratorCtx *)calloc( 1, sizeof( DgAcceleratorCtx ) );
@@ -160,8 +172,17 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	return ctx;
 }
 
-// Main process function. Converts input to a cv::Mat and passes jpeg info to the model.
-// Gets called for each frame, outputs objects in a DgAcceleratorOutput
+///
+/// \brief Main process function for the DgAccelerator model
+///
+/// This function is the main processing function for the DgAccelerator model. It converts the input data to a cv::Mat
+/// and passes the JPEG information to the model. The function is called for each frame and outputs objects in a
+/// DgAcceleratorOutput instance.
+///
+/// \param[in] ctx Pointer to the DgAcceleratorCtx instance
+/// \param[in] data Pointer to the input data as a OpenCV mat
+/// \return Returns a pointer to the DgAcceleratorOutput instance
+///
 DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char *data )
 {
 	diff++;  // Increment # of frames waiting to be processed
@@ -208,7 +229,14 @@ skip:
 	return (DgAcceleratorOutput *)calloc( 1, sizeof( DgAcceleratorOutput ) );
 }
 
-// Deinitialize function, called when element stops processing
+///
+/// \brief Deinitializes the DgAccelerator model
+///
+/// This function deinitializes the DgAccelerator model by processing all outstanding frames and resetting the model.
+/// It also frees the output objects.
+///
+/// \param[in] ctx Pointer to the DgAcceleratorCtx instance
+///
 void DgAcceleratorCtxDeinit( DgAcceleratorCtx *ctx )
 {
 	std::cout << "\nDeinitializing model, processing " << diff << " outstanding frames...\n\n\n";
