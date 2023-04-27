@@ -20,7 +20,12 @@ jobs:
       uses: actions/checkout@v3
       with:
         submodules: 'recursive'
-
+    -name: Print working dir
+      run: pwd
+    -name: Print LD_LIBRARY_PATH
+      run: echo $LD_LIBRARY_PATH
+    -name: print all the environment variables
+      run: printenv
     - name: Configure the build, remove cache if exists
       run: |
         mkdir build 
