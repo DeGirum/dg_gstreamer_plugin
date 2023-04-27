@@ -29,19 +29,26 @@
 
 #define MAX_LABEL_SIZE 128
 
+#include <memory>
+
+// GStreamer
 #include <gst/base/gstbasetransform.h>
 #include <gst/video/video.h>
 
-#include <cuda.h>
+
+// nVidia
 #include <cuda_runtime.h>
-#include <memory>
-#include "dgaccelerator_lib.h"
 #include "gst-nvquery.h"
 #include "gstnvdsmeta.h"
 #include "nvbufsurface.h"
 #include "nvbufsurftransform.h"
+
+// OpenCV
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
+
+// Local
+#include "dgaccelerator_lib.h"
 
 /* Package and library details required for plugin_init */
 #define PACKAGE        "dgaccelerator"

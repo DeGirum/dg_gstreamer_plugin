@@ -14,7 +14,7 @@ on:
 
 jobs:
   build:
-    runs-on: self-hosted 
+    runs-on: [self-hosted, dg-ubuntu-20.04-nv-02]
     steps:
     # - name: Install gtest manually
     #   run: | 
@@ -48,5 +48,5 @@ jobs:
         cd build 
         sudo cmake --build . --target install
 
-    - name: Run Test
+    - name: Inspect plugin
       run: gst-inspect-1.0 dgaccelerator
