@@ -26,7 +26,6 @@ jobs:
         mkdir build 
         cd build
         rm CMakeCache.txt || true
-        continue-on-error: true
         cmake ..
     - name: Build the plugin
       run: |
