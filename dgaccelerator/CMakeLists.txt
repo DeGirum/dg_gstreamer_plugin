@@ -11,6 +11,14 @@ find_package(CUDA REQUIRED)
 pkg_search_module(GLIB REQUIRED glib-2.0)
 pkg_check_modules(GSTREAMER REQUIRED gstreamer-1.0 gstreamer-base-1.0 gstreamer-video-1.0)
 
+# Check if LD_LIBRARY_PATH already contains the deepstream lib location
+string(FIND "$ENV{LD_LIBRARY_PATH}" "/opt/nvidia/deepstream/deepstream-6.2/lib/" LD_LIBRARY_PATH_INDEX)
+
+# If LD_LIBRARY_PATH doesn't contain the deepstream lib location, append it to the environment variable
+if(${LD_LIBRARY_PATH_INDEX} EQUAL -1)
+    set(ENV{LD_LIBRARY_PATH} "/opt/nvidia/deepstream/deepstream-6.2/lib/:$ENV{LD_LIBRARY_PATH}")
+endif()
+
 # Set NVDS installation directory
 set(NVDS_INSTALL_DIR "/opt/nvidia/deepstream/deepstream")
 
