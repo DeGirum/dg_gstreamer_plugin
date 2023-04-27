@@ -21,10 +21,11 @@ jobs:
       with:
         submodules: 'recursive'
 
-    - name: Configure the build
+    - name: Configure the build, remove cache if exists
       run: |
         mkdir build 
-        cd build 
+        cd build
+        rm CMakeCache.txt
         cmake ..
     - name: Build the plugin
       run: |
