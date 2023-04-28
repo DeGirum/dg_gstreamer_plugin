@@ -2,7 +2,6 @@
 ///  \file  dgaccelerator_lib.cpp
 ///  \brief DgAccelerator context for handling inference using Degirum models
 ///
-///  Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 ///  Copyright 2023 DeGirum Corporation
 ///
 ///  Permission is hereby granted, free of charge, to any person obtaining a

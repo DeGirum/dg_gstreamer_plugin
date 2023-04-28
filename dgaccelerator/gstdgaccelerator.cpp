@@ -2,7 +2,6 @@
 ///  \file  gstdgaccelerator.cpp
 ///  \brief DgAccelerator wrapper element implementation
 ///
-///  Copyright (c) 2017-2021, NVIDIA CORPORATION.  All rights reserved.
 ///  Copyright 2023 DeGirum Corporation
 ///
 ///  Permission is hereby granted, free of charge, to any person obtaining a
@@ -66,16 +65,7 @@ enum
 #define DEFAULT_DROP_FRAMES       true
 #define DEFAULT_BOX_COLOR         DGACCELERATOR_BOX_COLOR_RED
 
-#define RGB_BYTES_PER_PIXEL  3
-#define RGBA_BYTES_PER_PIXEL 4
-#define Y_BYTES_PER_PIXEL    1
-#define UV_BYTES_PER_PIXEL   2
-
-#define MIN_INPUT_OBJECT_WIDTH  16
-#define MIN_INPUT_OBJECT_HEIGHT 16
-
-// By default NVIDIA Hardware allocated memory flows through the pipeline. We
-// will be processing on this type of memory only
+// NVIDIA hardware-allocated memory
 #define GST_CAPS_FEATURE_MEMORY_NVMM "memory:NVMM"
 
 // Templates for sink and source pad
@@ -418,6 +408,7 @@ static void gst_dgaccelerator_get_property( GObject *object, guint prop_id, GVal
 static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 {
 	GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR( btrans );
+	// NvBufSurface params for buffer creation
 	NvBufSurfaceCreateParams create_params;
 
 	DgAcceleratorInitParams init_params =
@@ -426,21 +417,17 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 	snprintf( init_params.server_ip, 128, "%s", dgaccelerator->server_ip );      // Sets the server ip
 	snprintf( init_params.cloud_token, 128, "%s", dgaccelerator->cloud_token );  // Sets the cloud token
 
-	GstQuery *queryparams = NULL;
 	guint batch_size = 1;
 	int val = -1;
-
-	GST_DEBUG_OBJECT( dgaccelerator, "ctx lib %p \n", dgaccelerator->dgacceleratorlib_ctx );
+	GstQuery *queryparams = gst_nvquery_batch_size_new();
 
 	CHECK_CUDA_STATUS( cudaSetDevice( dgaccelerator->gpu_id ), "Unable to set cuda device" );
-
+	// Checks if GPU is integrated graphics
 	cudaDeviceGetAttribute( &val, cudaDevAttrIntegrated, dgaccelerator->gpu_id );
 	dgaccelerator->is_integrated = val;
-
 	// queries the batch size of the input buffers from the upstream element and
 	// sets the batch size for the plugin accordingly
 	dgaccelerator->batch_size = 1;
-	queryparams = gst_nvquery_batch_size_new();
 	if( gst_pad_peer_query( GST_BASE_TRANSFORM_SINK_PAD( btrans ), queryparams ) ||
 		gst_pad_peer_query( GST_BASE_TRANSFORM_SRC_PAD( btrans ), queryparams ) )
 	{
@@ -449,19 +436,18 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 			dgaccelerator->batch_size = batch_size;
 		}
 	}
-	GST_DEBUG_OBJECT( dgaccelerator, "Setting batch-size %d \n", dgaccelerator->batch_size );
-	gst_query_unref( queryparams );
-
 	init_params.numInputStreams = batch_size;  // Sets the number of input streams
+	gst_query_unref( queryparams );
 
 	dgaccelerator->dgacceleratorlib_ctx = DgAcceleratorCtxInit( &init_params );
 
 	CHECK_CUDA_STATUS( cudaStreamCreate( &dgaccelerator->cuda_stream ), "Could not create cuda stream" );
 
+	// destroy intermediate buffer if needed, prior to using it
 	if( dgaccelerator->inter_buf )
 		NvBufSurfaceDestroy( dgaccelerator->inter_buf );
 	dgaccelerator->inter_buf = NULL;
-
+	// handle box color for drawing
 	switch( dgaccelerator->box_color )
 	{
 	case DGACCELERATOR_BOX_COLOR_RED:  // Red
@@ -489,9 +475,7 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 		dgaccelerator->color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
 		break;
 	}
-
-	// An intermediate buffer for NV12/RGBA to BGR conversion  will be
-	// required. Can be skipped if custom algorithm can work directly on NV12/RGBA.
+	// NvBufSurface params for NV12/RGBA to BGR conversion
 	create_params.gpuId = dgaccelerator->gpu_id;
 	create_params.width = dgaccelerator->processing_width;
 	create_params.height = dgaccelerator->processing_height;
@@ -513,14 +497,10 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 		GST_ERROR( "Error: Could not allocate internal buffer for dgaccelerator" );
 		goto error;
 	}
-
 	// Create host memory for storing converted/scaled interleaved RGB data
 	CHECK_CUDA_STATUS(
-		cudaMallocHost( &dgaccelerator->host_rgb_buf, dgaccelerator->processing_width * dgaccelerator->processing_height * RGB_BYTES_PER_PIXEL ),
+		cudaMallocHost( &dgaccelerator->host_rgb_buf, dgaccelerator->processing_width * dgaccelerator->processing_height * 3 ),
 		"Could not allocate cuda host buffer" );
-
-	GST_DEBUG_OBJECT( dgaccelerator, "allocated cuda buffer %p \n", dgaccelerator->host_rgb_buf );
-
 	// CV Mat containing interleaved RGB data. This call does not allocate memory.
 	// It uses host_rgb_buf as data.
 	dgaccelerator->cvmat = new cv::Mat(
@@ -528,13 +508,10 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 		dgaccelerator->processing_width,
 		CV_8UC3,
 		dgaccelerator->host_rgb_buf,
-		dgaccelerator->processing_width * RGB_BYTES_PER_PIXEL );
-
+		dgaccelerator->processing_width * 3 );
 	if( !dgaccelerator->cvmat )
 		goto error;
-
-	GST_DEBUG_OBJECT( dgaccelerator, "created CV Mat\n" );
-
+	
 	return TRUE;
 error:
 	if( dgaccelerator->host_rgb_buf )
@@ -542,7 +519,6 @@ error:
 		cudaFreeHost( dgaccelerator->host_rgb_buf );
 		dgaccelerator->host_rgb_buf = NULL;
 	}
-
 	if( dgaccelerator->cuda_stream )
 	{
 		cudaStreamDestroy( dgaccelerator->cuda_stream );
@@ -550,6 +526,7 @@ error:
 	}
 	if( dgaccelerator->dgacceleratorlib_ctx )
 		DgAcceleratorCtxDeinit( dgaccelerator->dgacceleratorlib_ctx );
+	
 	return FALSE;
 }
 
@@ -584,13 +561,9 @@ static gboolean gst_dgaccelerator_stop( GstBaseTransform *btrans )
 		dgaccelerator->host_rgb_buf = NULL;
 	}
 
-	GST_DEBUG_OBJECT( dgaccelerator, "deleted CV Mat \n" );
-
-	// Deinit the algorithm library
+	// Deinitialize our library
 	DgAcceleratorCtxDeinit( dgaccelerator->dgacceleratorlib_ctx );
 	dgaccelerator->dgacceleratorlib_ctx = NULL;
-
-	GST_DEBUG_OBJECT( dgaccelerator, "ctx lib released \n" );
 
 	return TRUE;
 }
@@ -725,7 +698,6 @@ gint input_height )
 	// Memset the memory
 	NvBufSurfaceMemSet( dgaccelerator->inter_buf, 0, 0, 0 );
 
-	GST_DEBUG_OBJECT( dgaccelerator, "Scaling and converting input buffer\n" );
 
 	// Transformation scaling+format conversion if any.
 	err = NvBufSurfTransform( &ip_surf, dgaccelerator->inter_buf, &transform_params );
@@ -745,9 +717,7 @@ gint input_height )
 		NvBufSurfaceSyncForCpu( dgaccelerator->inter_buf, 0, 0 );
 	}
 
-	// Use openCV to remove padding and convert RGBA to BGR. Can be skipped if
-	// algorithm can handle padded RGBA data.
-
+	// Use OpenCV to remove padding and convert RGBA to BGR.
 	in_mat = cv::Mat(
 		dgaccelerator->processing_height,
 		dgaccelerator->processing_width,
@@ -833,7 +803,6 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 	}
 	nvds_set_input_system_timestamp( inbuf, GST_ELEMENT_NAME( dgaccelerator ) );
 	surface = (NvBufSurface *)in_map_info.data;
-	GST_DEBUG_OBJECT( dgaccelerator, "Processing Frame %" G_GUINT64_FORMAT " Surface %p\n", dgaccelerator->frame_num, surface );
 
 	// checks the NvBufSurface to ensure it is valid and that the memory is
 	// allocated on the correct GPU
@@ -902,7 +871,7 @@ error:
 /// \param[in] frame_meta Pointer to the NvDsFrameMeta instance for the video frame
 /// \param[in] scale_ratio The scale ratio used for processing the frame
 /// \param[in] output Pointer to the DgAcceleratorOutput instance for the output
-/// \param[in] batch_id The ID of the batch
+/// \param[in] batch_id The frame number in the batch, unused
 ///
 static void attach_metadata_full_frame(
 GstDgAccelerator *dgaccelerator,
@@ -914,8 +883,7 @@ guint batch_id )
 	NvDsBatchMeta *batch_meta = frame_meta->base_meta.batch_meta;
 	NvDsObjectMeta *object_meta = NULL;
 	static gchar font_name[] = "Serif";
-	GST_DEBUG_OBJECT( dgaccelerator, "Attaching metadata %d\n", output->numObjects );
-
+	// For each object
 	for( gint i = 0; i < output->numObjects; i++ )
 	{
 		DgAcceleratorObject *obj = &output->object[ i ];
@@ -929,7 +897,7 @@ guint batch_id )
 		rect_params.width = obj->width;
 		rect_params.height = obj->height;
 
-		// Semi-transparent yellow background
+		// Background color for rectangle, default off
 		rect_params.has_bg_color = 0;
 		rect_params.bg_color = ( NvOSD_ColorParams ){ 1, 1, 0, 0.4 };
 		// Set box border width
@@ -943,18 +911,6 @@ guint batch_id )
 		rect_params.top /= scale_ratio;
 		rect_params.width /= scale_ratio;
 		rect_params.height /= scale_ratio;
-		GST_DEBUG_OBJECT(
-			dgaccelerator,
-			"Attaching rect%d of batch%u"
-			"  left->%f top->%f width->%f"
-			" height->%f label->%s\n",
-			i,
-			batch_id,
-			rect_params.left,
-			rect_params.top,
-			rect_params.width,
-			rect_params.height,
-			obj->label );
 
 		object_meta->object_id = UNTRACKED_OBJECT_ID;
 		g_strlcpy( object_meta->obj_label, obj->label, MAX_LABEL_SIZE );

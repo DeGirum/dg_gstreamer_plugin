@@ -2,7 +2,6 @@
 ///  \file  dgaccelerator_lib.h
 ///  \brief DgAccelerator context class header file
 ///
-///  Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
 ///  Copyright 2023 DeGirum Corporation
 ///
 ///  Permission is hereby granted, free of charge, to any person obtaining a
@@ -78,7 +77,7 @@ extern "C"
 	// Process output
 	DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char *data );
 
-	// Deinitialize library context
+	// Deinitialize our library context
 	void DgAcceleratorCtxDeinit( DgAcceleratorCtx *ctx );
 
 #ifdef __cplusplus

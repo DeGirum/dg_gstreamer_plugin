@@ -25,8 +25,6 @@
 ///  This software contains source code provided by NVIDIA Corporation.
 ///
 
-#include "gstdgaccelerator.h"
-
 
 #define CHECK_NVDS_MEMORY_AND_GPUID( object, surface )                                                                                           \
 	( {                                                                                                                                          \
