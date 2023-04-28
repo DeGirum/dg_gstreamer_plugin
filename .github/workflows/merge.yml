@@ -1,21 +1,46 @@
 #
-# DeGirum GitHub starter workflow
+# DgAccelerator plugin PR workflow
 # Copyright 2023 DeGirum Corporation
 #
-# Merge workflow: configure dependencies, build plugin, and runs tests
+# Configure and install dependencies, build plugin, and runs tests
 #
 
-name: CI Merge
+name: CI Merge workflow
 
 on:
   # run this action on pull requests to main branch
   pull_request:
-    branches: [main]
-  workflow_dispatch:
+    branches: [ main ]
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: [self-hosted, dg-ubuntu-20.04-nv-02]
     steps:
-      - name: Hello
-        run: echo "Hello World"
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          submodules: 'recursive'
+      - name: Print working dir
+        run: pwd
+      - name: Print LD_LIBRARY_PATH
+        run: echo $LD_LIBRARY_PATH
+      - name: Print all the environment variables
+        run: printenv
+      - name: Configure the build, remove cache if exists
+        run: |
+          mkdir build 
+          cd build
+          rm -f CMakeCache.txt
+          cmake ..
+      - name: Build the plugin
+        run: |
+          cd build 
+          cmake --build .
+      - name: Install the plugin
+        run: |
+          cd build 
+          cmake --install .
+      - name: Verify Installation
+        run: | 
+          export LD_LIBRARY_PATH=/opt/nvidia/deepstream/deepstream/lib/:$LD_LIBRARY_PATH
+          gst-inspect-1.0 dgaccelerator
