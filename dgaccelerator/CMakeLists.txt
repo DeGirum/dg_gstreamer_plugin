@@ -67,6 +67,7 @@ set(SRCS
     dgaccelerator_lib.cpp
     gstdgaccelerator.h
     gstdgaccelerator.cpp
+    nvdefines.h
     ../CppSDK/inc/Utilities/dg_file_utilities.h
     ../CppSDK/inc/DglibInterface/dg_model_api.h
     ../CppSDK/client/dg_client.h

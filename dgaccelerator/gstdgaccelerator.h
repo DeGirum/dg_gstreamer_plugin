@@ -23,7 +23,6 @@
 ///  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 ///  DEALINGS IN THE SOFTWARE.
 ///
-///  This software contains source code provided by NVIDIA Corporation.
 
 #ifndef __GST_DGACCELERATOR_H__
 #define __GST_DGACCELERATOR_H__

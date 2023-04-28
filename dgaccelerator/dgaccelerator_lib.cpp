@@ -23,7 +23,6 @@
 ///  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 ///  DEALINGS IN THE SOFTWARE.
 ///
-///  This software contains source code provided by NVIDIA Corporation.
 
 #include <stdio.h>
 #include <stdlib.h>

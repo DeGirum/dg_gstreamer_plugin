@@ -23,7 +23,6 @@
 ///  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 ///  DEALINGS IN THE SOFTWARE.
 ///
-///  This software contains source code provided by NVIDIA Corporation.
 
 #include <string.h>
 #include <sys/time.h>
@@ -34,6 +33,7 @@
 #include <string>
 
 #include "gstdgaccelerator.h"
+#include "nvdefines.h"
 
 GST_DEBUG_CATEGORY_STATIC( gst_dgaccelerator_debug );
 #define GST_CAT_DEFAULT gst_dgaccelerator_debug
@@ -55,26 +55,6 @@ enum
 	PROP_GPU_DEVICE_ID
 };
 
-#define CHECK_NVDS_MEMORY_AND_GPUID( object, surface )                                                                                           \
-	( {                                                                                                                                          \
-		int _errtype = 0;                                                                                                                        \
-		do                                                                                                                                       \
-		{                                                                                                                                        \
-			if( ( surface->memType == NVBUF_MEM_DEFAULT || surface->memType == NVBUF_MEM_CUDA_DEVICE ) && ( surface->gpuId != object->gpu_id ) ) \
-			{                                                                                                                                    \
-				GST_ELEMENT_ERROR(                                                                                                               \
-					object,                                                                                                                      \
-					RESOURCE,                                                                                                                    \
-					FAILED,                                                                                                                      \
-					( "Input surface gpu-id doesnt match with configured gpu-id for element,"                                                    \
-					  " please allocate input using unified memory, or use same gpu-ids" ),                                                      \
-					( "surface-gpu-id=%d,%s-gpu-id=%d", surface->gpuId, GST_ELEMENT_NAME( object ), object->gpu_id ) );                          \
-				_errtype = 1;                                                                                                                    \
-			}                                                                                                                                    \
-		} while( 0 );                                                                                                                            \
-		_errtype;                                                                                                                                \
-	} )
-
 // DEFAULT PROPERTY VALUES
 #define DEFAULT_UNIQUE_ID         15
 #define DEFAULT_PROCESSING_WIDTH  512
@@ -93,26 +73,6 @@ enum
 
 #define MIN_INPUT_OBJECT_WIDTH  16
 #define MIN_INPUT_OBJECT_HEIGHT 16
-
-#define CHECK_NPP_STATUS( npp_status, error_str )                                                               \
-	do                                                                                                          \
-	{                                                                                                           \
-		if( ( npp_status ) != NPP_SUCCESS )                                                                     \
-		{                                                                                                       \
-			g_print( "Error: %s in %s at line %d: NPP Error %d\n", error_str, __FILE__, __LINE__, npp_status ); \
-			goto error;                                                                                         \
-		}                                                                                                       \
-	} while( 0 )
-
-#define CHECK_CUDA_STATUS( cuda_status, error_str )                                                                         \
-	do                                                                                                                      \
-	{                                                                                                                       \
-		if( ( cuda_status ) != cudaSuccess )                                                                                \
-		{                                                                                                                   \
-			g_print( "Error: %s in %s at line %d (%s)\n", error_str, __FILE__, __LINE__, cudaGetErrorName( cuda_status ) ); \
-			goto error;                                                                                                     \
-		}                                                                                                                   \
-	} while( 0 )
 
 // By default NVIDIA Hardware allocated memory flows through the pipeline. We
 // will be processing on this type of memory only
