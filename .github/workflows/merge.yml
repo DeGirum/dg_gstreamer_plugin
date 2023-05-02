@@ -44,3 +44,7 @@ jobs:
         run: | 
           export LD_LIBRARY_PATH=/opt/nvidia/deepstream/deepstream/lib/:$LD_LIBRARY_PATH
           gst-inspect-1.0 dgaccelerator
+      - name: Run GTests
+        run: |
+          cd build
+          ./run_tests

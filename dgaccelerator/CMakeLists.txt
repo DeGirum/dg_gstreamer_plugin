@@ -10,6 +10,7 @@ find_package(OpenCV REQUIRED)
 find_package(CUDA REQUIRED)
 pkg_search_module(GLIB REQUIRED glib-2.0)
 pkg_check_modules(GSTREAMER REQUIRED gstreamer-1.0 gstreamer-base-1.0 gstreamer-video-1.0)
+find_package(GTest CONFIG REQUIRED)
 
 # Check if LD_LIBRARY_PATH already contains the deepstream lib location
 string(FIND "$ENV{LD_LIBRARY_PATH}" "/opt/nvidia/deepstream/deepstream-6.2/lib/" LD_LIBRARY_PATH_INDEX)
@@ -110,3 +111,40 @@ install(TARGETS nvdsgst_dgaccelerator
 LIBRARY DESTINATION ${GST_INSTALL_DIR} 
 ARCHIVE DESTINATION ${LIB_INSTALL_DIR}
 )
+
+enable_testing()
+
+add_executable(
+  run_tests
+  ../tests/dgaccelerator_test.cpp
+)
+target_include_directories(run_tests PUBLIC
+    ${OpenCV_INCLUDE_DIRS}
+    ${GSTREAMER_INCLUDE_DIRS}
+    ${GSTREAMER_VIDEO_INCLUDE_DIRS}
+    ${GLIB_INCLUDE_DIRS}
+    ${NVDS_INCLUDE_DIRS}
+    ${CUDA_INCLUDE_DIRS}
+    ${NVDS_INSTALL_DIR}/sources/includes
+)
+target_link_libraries(
+  run_tests
+  GTest::gtest_main
+  aiclientlib
+  pthread
+  ${OpenCV_LIBS}
+  ${GSTREAMER_LIBRARIES}
+  ${GSTREAMER_VIDEO_LIBRARIES}
+  ${GLIB_LIBRARIES}
+  ${NVDS_LIBRARIES}
+  ${CUDA_LIBRARIES}
+  ${CMAKE_DL_LIBS}
+)
+
+include(GoogleTest)
+
+# generates CTest commands that will run all tests
+gtest_discover_tests(run_tests)
+# installs the ./run_tests executable
+install(TARGETS run_tests DESTINATION ${CMAKE_BINARY_DIR})
+# gtest_add_tests(TARGET run_tests)

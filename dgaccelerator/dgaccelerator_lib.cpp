@@ -246,6 +246,9 @@ void DgAcceleratorCtxDeinit( DgAcceleratorCtx *ctx )
 	auto duration = std::chrono::duration_cast< std::chrono::milliseconds >( end_time - start_time );
 	std::cout << "Frames processed / duration (FPS) :" << 1000 * ( (long double)framesProcessed / duration.count() );
 
+	framesProcessed = 0;
+	diff = 0;
+
 	// Reset our model
 	ctx->model.reset();
 	free( ctx );

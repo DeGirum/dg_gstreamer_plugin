@@ -60,7 +60,7 @@ enum
 #define DEFAULT_PROCESSING_HEIGHT 512
 #define DEFAULT_GPU_ID            0
 #define DEFAULT_MODEL_NAME        "yolo_v5s_coco--512x512_quant_n2x_orca_1"
-#define DEFAULT_SERVER_IP         "100.122.112.76"
+#define DEFAULT_SERVER_IP         "127.0.0.1"
 #define DEFAULT_CLOUD_TOKEN       ""
 #define DEFAULT_DROP_FRAMES       true
 #define DEFAULT_BOX_COLOR         DGACCELERATOR_BOX_COLOR_RED
