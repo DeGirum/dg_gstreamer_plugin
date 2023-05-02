@@ -46,5 +46,7 @@ jobs:
           gst-inspect-1.0 dgaccelerator
       - name: Run GTests
         run: |
+          export PATH=/usr/local/cuda-11.8/bin:$PATH
+          export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
           cd build
           ./run_tests
