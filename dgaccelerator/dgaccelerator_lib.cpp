@@ -47,15 +47,12 @@ std::vector< DgAcceleratorOutput * > out;  // Vector of pointers to output struc
 unsigned int curIndex;                     // circular buffer index implementation
 
 size_t diff = 0;             // Counter for # of frames waiting for callback at any given moment
-size_t framesProcessed = 0;  // Frame count for FPS calculation, careful with uint overflow...
-
-bool failed = false;  // Model error message handling
-std::string failReason;
+size_t framesProcessed = 0;  // Frame count for FPS calculation, careful with uint overflow.
 
 // Clock for counting total duration
 std::chrono::time_point< std::chrono::high_resolution_clock > start_time;
 
-// Context for the plugin, holds initParams for the model
+// Context for the element, holds initParams for the model
 // and a smart pointer to the model
 struct DgAcceleratorCtx
 {
@@ -134,11 +131,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 		// Check for errors during inference
 		std::string possible_error = DG::errorCheck( response );
 		if( ! possible_error.empty() )
-		{
-			failed = true;
-			failReason = possible_error;
 			goto fail;
-		}
 
 		if( strcmp( resp.type_name(), "array" ) == 0 && response.dump() != "[]" )
 		{
@@ -160,11 +153,6 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 				};
 				snprintf( out[ index ]->object[ i ].label, 64, "%s", label.c_str() );  // Sets the label
 			}
-		}
-		else if( strcmp( resp.type_name(), "object" ) == 0 )
-		{  // Model gave a bad result
-			failed = true;
-			failReason = response.dump();
 		}
 	fail:
 		framesProcessed++;
@@ -202,9 +190,10 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 	curIndex %= RING_BUFFER_SIZE;
 	int curFrameIndex = curIndex++;
 
-	if( failed ){
-		DgAcceleratorCtxDeinit(ctx);
-		throw std::runtime_error( failReason );
+	// If an error happens during inference
+	if( !ctx->model->lastError().empty() ){
+		// DgAcceleratorCtxDeinit(ctx);
+		throw std::runtime_error( ctx->model->lastError() );
 	}
 
 	// Frame skip implementation:

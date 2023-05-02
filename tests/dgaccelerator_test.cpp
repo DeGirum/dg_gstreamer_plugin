@@ -8,6 +8,7 @@
 /// for testing dgaccelerator plugin in DeepStream pipelines
 ///
 #include <iostream>
+#include <thread>
 #include "gtest/gtest.h"
 #include "../dgaccelerator/gstdgaccelerator.h"
 #include "../dgaccelerator/dgaccelerator_lib.h"
@@ -153,12 +154,13 @@ TEST_F(GStreamerPluginTest, Robustness) {
 		}, std::runtime_error);
 	gst_object_unref(pipeline2);
 
-	// Test handling of invalid cloud-token input 
+	// Test handling of invalid cloud-token input (runtime validation)
 	GstElement *pipeline3 = create_dgaccelerator_pipeline("degirum/public/mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", "192.168.0.141", "fake_cloud_token", 300, 300);
 	EXPECT_THROW(
 		{
 			try {
 				gst_element_set_state(pipeline3, GST_STATE_PLAYING);
+				std::this_thread::sleep_for(std::chrono::seconds(1)); // Add a one-second wait
 			} catch (const std::runtime_error& e) {
 				std::cerr << "Caught runtime error: " << e.what() << std::endl;
 				throw;
@@ -166,12 +168,13 @@ TEST_F(GStreamerPluginTest, Robustness) {
 		}, std::runtime_error);
 	gst_object_unref(pipeline3);
 
-	// Test handling of model and processing-width / processing-height mismatch
+	// Test handling of model and processing-width / processing-height mismatch (runtime validation)
 	GstElement *pipeline4 = create_dgaccelerator_pipeline("mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", "192.168.0.141", "", 450, 300);
 	EXPECT_THROW(
 		{
 			try {
 				gst_element_set_state(pipeline4, GST_STATE_PLAYING);
+				std::this_thread::sleep_for(std::chrono::seconds(1)); // Add a one-second wait
 			} catch (const std::runtime_error& e) {
 				std::cerr << "Caught runtime error: " << e.what() << std::endl;
 				throw;
