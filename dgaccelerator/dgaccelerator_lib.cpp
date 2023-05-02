@@ -123,12 +123,23 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 
 	// Callback function for parsing the model inference data for a frame
 	auto callback = [ ctx ]( const json &response, const std::string &fr ) {
+
 		unsigned int index = std::stoi( fr );  // Index of the Output struct to fill
 		// Reset the output struct:
 		std::memset( out[ index ], 0, sizeof( DgAcceleratorObject ) );
 
 		// Parse the json output, fill output structure using processed output
 		json_ld resp = response;
+
+		// Check for errors during inference
+		std::string possible_error = DG::errorCheck( response );
+		if( ! possible_error.empty() )
+		{
+			failed = true;
+			failReason = possible_error;
+			goto fail;
+		}
+
 		if( strcmp( resp.type_name(), "array" ) == 0 && response.dump() != "[]" )
 		{
 			// Iterate over all of the detected objects
@@ -155,6 +166,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 			failed = true;
 			failReason = response.dump();
 		}
+	fail:
 		framesProcessed++;
 		diff--;  // Decrement # of frames waiting to be processed
 	};
@@ -190,8 +202,10 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 	curIndex %= RING_BUFFER_SIZE;
 	int curFrameIndex = curIndex++;
 
-	if( failed )
-		throw std::runtime_error( "Model gave bad result: " + failReason );
+	if( failed ){
+		DgAcceleratorCtxDeinit(ctx);
+		throw std::runtime_error( failReason );
+	}
 
 	// Frame skip implementation:
 	if( ctx->initParams.drop_frames )
