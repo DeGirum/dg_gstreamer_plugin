@@ -48,5 +48,6 @@ jobs:
         run: |
           export PATH=/usr/local/cuda-11.8/bin:$PATH
           export LD_LIBRARY_PATH=/usr/local/cuda-11.8/lib64:$LD_LIBRARY_PATH
+          export LD_LIBRARY_PATH=/opt/nvidia/deepstream/deepstream/lib/:$LD_LIBRARY_PATH
           cd build
           ./run_tests
