@@ -44,9 +44,16 @@ static GstElement *create_dgaccelerator_pipeline( const gchar *model_name, const
 
   gst_bin_add_many(GST_BIN(pipeline), source, dgaccelerator, sink, nullptr);
   gst_element_link_many(source, dgaccelerator, sink, nullptr);
-
   g_object_set(G_OBJECT(dgaccelerator), "model-name", model_name, "server-ip", server_ip, "cloud-token", cloud_token, "processing-width", procW, "processing-height", procH, nullptr);
-
+  
+  std::cout << "\n\tTesting pipeline: fakesrc ! dgaccelerator "
+          << "model-name=" << model_name << " "
+          << "server-ip=" << server_ip << " "
+          << "cloud-token=" << cloud_token << " "
+          << "processing-width=" << procW << " "
+          << "processing-height=" << procH << " "
+          << "! fakesink";
+		  
   return pipeline;
 }
 
