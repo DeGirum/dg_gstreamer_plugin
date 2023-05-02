@@ -24,23 +24,18 @@ protected:
   ~GStreamerPluginTest() override {
     // gst_deinit();
   }
-  // debug function
+  // debug function, prints list of installed gstreamer plugins on system
   void printPlugins(){
-	// Print plugin list
-	GstRegistry* registry = gst_registry_get();
-	GList* plugin_list = gst_registry_get_plugin_list(registry);
-	std::cout << "available plugin list:\n";
+	GList* plugin_list = gst_registry_get_plugin_list(gst_registry_get());
+	std::cout << "Available plugin list:\n";
 	for (GList* it = plugin_list; it != NULL; it = it->next) {
-		GstPlugin* plugin = GST_PLUGIN(it->data);
-		std::cout << gst_plugin_get_name(plugin) << std::endl;
+		std::cout << gst_plugin_get_name(GST_PLUGIN(it->data)) << std::endl;
 	}
-	// Free the list
-	gst_plugin_list_free(plugin_list);
+	gst_plugin_list_free(plugin_list); // Free the list
   }
 };
-// creates a simple pipeline for debug purposes
-// fakesrc -> dgaccelerator -> fakesink
-static GstElement *create_dgaccelerator_pipeline(const gchar *model_name, const gchar *server_ip) {
+// creates a simple pipeline for debug purposes fakesrc -> dgaccelerator -> fakesink
+static GstElement *create_dgaccelerator_pipeline( const gchar *model_name, const gchar *server_ip, const gchar* cloud_token, int procW, int procH ) {
   GstElement *pipeline = gst_pipeline_new("test-pipeline");
   GstElement *source = gst_element_factory_make("fakesrc", "source");
   GstElement *dgaccelerator = gst_element_factory_make("dgaccelerator", "dgaccelerator");
@@ -49,7 +44,7 @@ static GstElement *create_dgaccelerator_pipeline(const gchar *model_name, const 
   gst_bin_add_many(GST_BIN(pipeline), source, dgaccelerator, sink, nullptr);
   gst_element_link_many(source, dgaccelerator, sink, nullptr);
 
-  g_object_set(G_OBJECT(dgaccelerator), "model-name", model_name, "server-ip", server_ip, nullptr);
+  g_object_set(G_OBJECT(dgaccelerator), "model-name", model_name, "server-ip", server_ip, "cloud-token", cloud_token, "processing-width", procW, "processing-height", procH, nullptr);
 
   return pipeline;
 }
@@ -62,13 +57,13 @@ TEST_F(GStreamerPluginTest, PluginRegistered) {
 }
 
 // Test running several pipelines with the element
-TEST_F(GStreamerPluginTest, RunSeveralPipelines) {
+TEST_F(GStreamerPluginTest, RunTestPipelines) {
 	// gst_update_registry();
 	// List of pipelines
 	// 0 : gstreamer elements control check
-	// 1 : non-dgaccelerator control check
+	// 1 : nvidia + gstreamer control check
 	// 2 : dgaccelerator on videotestsrc
-	// 3 : dgaccelerator on mp4 video
+	// 3 : dgaccelerator on mp4 video with box drawing
 	const gchar *pipelines[] = {
 		"fakesrc ! fakesink",
 		"videotestsrc ! nvvideoconvert ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! identity ! fakesink enable-last-sample=0",
@@ -87,7 +82,7 @@ TEST_F(GStreamerPluginTest, RunSeveralPipelines) {
 	ASSERT_TRUE(pipeline != NULL); 													// Assert that the pipeline was launched correctly
 	GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PLAYING); 	// Start the pipeline
 	EXPECT_EQ(GST_STATE_CHANGE_ASYNC, ret); 										// Expect that the pipeline state change is asynchronous
-	g_usleep(2 * G_USEC_PER_SEC); 														// Wait for 2 seconds
+	g_usleep(2 * G_USEC_PER_SEC); 													// Wait for 2 seconds
 	ret = gst_element_set_state(pipeline, GST_STATE_NULL); 							// Stop the pipeline
 	EXPECT_EQ(GST_STATE_CHANGE_SUCCESS, ret); 										// Expect that the pipeline state change is successful
 	gst_object_unref(pipeline); 													// Free the pipeline's resources
@@ -130,10 +125,10 @@ TEST_F(GStreamerPluginTest, Robustness) {
 	ASSERT_NE(processing_height, 0);
 
 
-	// Model name and server ip have to be validated during runtime:
-	
+	// Test properties that have to be validated during runtime:
+
 	// Test handling of non-existing model name
-	GstElement *pipeline1 = create_dgaccelerator_pipeline("non_existing_model", "192.168.0.141");
+	GstElement *pipeline1 = create_dgaccelerator_pipeline("non_existing_model", "192.168.0.141", "", 300, 300);
 	EXPECT_THROW(
 		{
 			try {
@@ -146,7 +141,7 @@ TEST_F(GStreamerPluginTest, Robustness) {
 	gst_object_unref(pipeline1);
 
 	// Test handling of incorrect server IP
-	GstElement *pipeline2 = create_dgaccelerator_pipeline("mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", "999.999.999.999");
+	GstElement *pipeline2 = create_dgaccelerator_pipeline("mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", "999.999.999.999", "", 300, 300);
 	EXPECT_THROW(
 		{
 			try {
@@ -157,6 +152,32 @@ TEST_F(GStreamerPluginTest, Robustness) {
 			}
 		}, std::runtime_error);
 	gst_object_unref(pipeline2);
+
+	// Test handling of invalid cloud-token input 
+	GstElement *pipeline3 = create_dgaccelerator_pipeline("degirum/public/mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", "192.168.0.141", "fake_cloud_token", 300, 300);
+	EXPECT_THROW(
+		{
+			try {
+				gst_element_set_state(pipeline3, GST_STATE_PLAYING);
+			} catch (const std::runtime_error& e) {
+				std::cerr << "Caught runtime error: " << e.what() << std::endl;
+				throw;
+			}
+		}, std::runtime_error);
+	gst_object_unref(pipeline3);
+
+	// Test handling of model and processing-width / processing-height mismatch
+	GstElement *pipeline4 = create_dgaccelerator_pipeline("mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", "192.168.0.141", "", 450, 300);
+	EXPECT_THROW(
+		{
+			try {
+				gst_element_set_state(pipeline4, GST_STATE_PLAYING);
+			} catch (const std::runtime_error& e) {
+				std::cerr << "Caught runtime error: " << e.what() << std::endl;
+				throw;
+			}
+		}, std::runtime_error);
+	gst_object_unref(pipeline4);
 
 
 	gst_object_unref(dgaccelerator);
