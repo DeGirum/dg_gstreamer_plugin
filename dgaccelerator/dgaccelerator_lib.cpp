@@ -44,10 +44,7 @@ int NUM_INPUT_STREAMS;                     // Number of input streams
 int RING_BUFFER_SIZE;                      // Size of circular queue of output objects
 int FRAME_DIFF_LIMIT;                      // Maximum number of frames waiting to be processed
 std::vector< DgAcceleratorOutput * > out;  // Vector of pointers to output structs, for circular buffer implementation
-unsigned int curIndex;                     // circular buffer index implementation
 
-size_t diff = 0;             // Counter for # of frames waiting for callback at any given moment
-size_t framesProcessed = 0;  // Frame count for FPS calculation, careful with uint overflow.
 
 // Clock for counting total duration
 std::chrono::time_point< std::chrono::high_resolution_clock > start_time;
@@ -58,6 +55,13 @@ struct DgAcceleratorCtx
 {
 	DgAcceleratorInitParams initParams;
 	std::unique_ptr< DG::AIModelAsync > model;
+	size_t diff = 0;             // Counter for # of frames waiting for callback at any given moment
+	size_t framesProcessed = 0;  // Frame count for FPS calculation, careful with uint overflow.
+	unsigned int curIndex;       // circular buffer index implementation
+
+	// Temporary error handling without lastError()
+	bool failed = false;
+	std::string failReason;
 };
 
 ///
@@ -88,7 +92,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 		elem = (DgAcceleratorOutput *)calloc( 1, sizeof( DgAcceleratorOutput ) );
 	}
 	// Initialize curIndex
-	curIndex = 0;
+	ctx->curIndex = 0;
 
 	const std::string serverIP = ctx->initParams.server_ip;
 	std::string modelNameStr = ctx->initParams.model_name;
@@ -115,7 +119,8 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	}
 	else  // Cloud model requested, set the token in model params
 	{
-		mparams.CloudToken_set( initParams->cloud_token );
+		if ( initParams->cloud_token != "" )
+			mparams.CloudToken_set( initParams->cloud_token );
 	}
 
 	// Callback function for parsing the model inference data for a frame
@@ -131,8 +136,11 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 		// Check for errors during inference
 		std::string possible_error = DG::errorCheck( response );
 		if( ! possible_error.empty() )
+		{
+			ctx->failed = true;
+			ctx->failReason = possible_error;
 			goto fail;
-
+		}
 		if( strcmp( resp.type_name(), "array" ) == 0 && response.dump() != "[]" )
 		{
 			// Iterate over all of the detected objects
@@ -154,9 +162,14 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 				snprintf( out[ index ]->object[ i ].label, 64, "%s", label.c_str() );  // Sets the label
 			}
 		}
+		else if( strcmp( resp.type_name(), "object" ) == 0 )
+		{  // Model gave a bad result not caught by errorcheck
+			ctx->failed = true;
+			ctx->failReason = response.dump();
+		}
 	fail:
-		framesProcessed++;
-		diff--;  // Decrement # of frames waiting to be processed
+		ctx->framesProcessed++;
+		ctx->diff--;  // Decrement # of frames waiting to be processed
 	};
 
 	// Initialize the model with the parameters. Internal frame queue size set to 48
@@ -183,23 +196,28 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 ///
 DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char *data )
 {
-	diff++;  // Increment # of frames waiting to be processed
+	ctx->diff++;  // Increment # of frames waiting to be processed
 
 	// Immediately need to add to curIndex so that the circular buffer can keep going
 	// Wrap around RING_BUFFER_SIZE for circular buffer implementation
-	curIndex %= RING_BUFFER_SIZE;
-	int curFrameIndex = curIndex++;
+	ctx->curIndex %= RING_BUFFER_SIZE;
+	int curFrameIndex = ctx->curIndex++;
 
 	// If an error happens during inference
-	if( !ctx->model->lastError().empty() ){
-		// DgAcceleratorCtxDeinit(ctx);
-		throw std::runtime_error( ctx->model->lastError() );
+	// std::string possible_error = ctx->model->lastError();
+	// if( !possible_error.empty() ){
+	// 	throw std::runtime_error( possible_error );
+	// }
+	if ( ctx->failed )
+	{
+		// DgAcceleratorCtxDeinit (ctx);
+		throw std::runtime_error ( ctx->failReason );
 	}
 
 	// Frame skip implementation:
 	if( ctx->initParams.drop_frames )
 	{
-		if( diff > FRAME_DIFF_LIMIT )  // if FRAME_DIFF_LIMIT frames behind
+		if( ctx->diff > FRAME_DIFF_LIMIT )  // if FRAME_DIFF_LIMIT frames behind
 			goto skip;
 	}
 
@@ -223,9 +241,9 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 
 skip:
 	// Reach here if the model can't keep up with all the incoming frames
-	std::cout << "Skipping frame due to diff of " << diff << "\n";
+	std::cout << "Skipping frame due to diff of " << ctx->diff << "\n";
 	std::cout << "If this happens too often, lower the incoming framerate of streams and/or the number of streams!\n";
-	diff--;
+	ctx->diff--;
 	// Return an empty frame instead
 	return (DgAcceleratorOutput *)calloc( 1, sizeof( DgAcceleratorOutput ) );
 }
@@ -240,17 +258,17 @@ skip:
 ///
 void DgAcceleratorCtxDeinit( DgAcceleratorCtx *ctx )
 {
-	std::cout << "\nDeinitializing model, processing " << diff << " outstanding frames...\n\n\n";
+	std::cout << "\nDeinitializing model, processing " << ctx->diff << " outstanding frames...\n\n\n";
 	// Process all outstanding frames:
 	ctx->model->waitCompletion();
 
 	// Calculate FPS
 	auto end_time = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast< std::chrono::milliseconds >( end_time - start_time );
-	std::cout << "Frames processed / duration (FPS) :" << 1000 * ( (long double)framesProcessed / duration.count() );
+	std::cout << "Frames processed / duration (FPS) :" << 1000 * ( (long double)ctx->framesProcessed / duration.count() );
 
-	framesProcessed = 0;
-	diff = 0;
+	ctx->framesProcessed = 0;
+	ctx->diff = 0;
 
 	// Reset our model
 	ctx->model.reset();

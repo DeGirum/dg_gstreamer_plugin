@@ -35,25 +35,25 @@ protected:
 	gst_plugin_list_free(plugin_list); // Free the list
   }
 };
-// creates a simple pipeline for debug purposes fakesrc -> dgaccelerator -> fakesink
-static GstElement *create_dgaccelerator_pipeline( const gchar *model_name, const gchar *server_ip, const gchar* cloud_token, int procW, int procH ) {
-  GstElement *pipeline = gst_pipeline_new("test-pipeline");
-  GstElement *source = gst_element_factory_make("fakesrc", "source");
-  GstElement *dgaccelerator = gst_element_factory_make("dgaccelerator", "dgaccelerator");
-  GstElement *sink = gst_element_factory_make("fakesink", "sink");
 
-  gst_bin_add_many(GST_BIN(pipeline), source, dgaccelerator, sink, nullptr);
-  gst_element_link_many(source, dgaccelerator, sink, nullptr);
-  g_object_set(G_OBJECT(dgaccelerator), "model-name", model_name, "server-ip", server_ip, "cloud-token", cloud_token, "processing-width", procW, "processing-height", procH, nullptr);
-  
-  std::cout << "\n\tTesting pipeline: fakesrc ! dgaccelerator "
-          << "model-name=" << model_name << " "
-          << "server-ip=" << server_ip << " "
-          << "cloud-token=" << cloud_token << " "
-          << "processing-width=" << procW << " "
-          << "processing-height=" << procH << " "
-          << "! fakesink";
-		  
+// Convenience function to create a dummy pipeline with specified properties
+// nvurisrcbin -> nvstreammux -> dgaccelerator -> fakesink
+static GstElement *create_dgaccelerator_pipeline(const gchar *model_name, const gchar *server_ip, const gchar *cloud_token, int procW, int procH) {
+  GError *error = nullptr;
+  gchar *pipeline_description = g_strdup_printf(
+      "nvurisrcbin uri=file:///opt/nvidia/deepstream/deepstream-6.2/samples/streams/sample_1080p_h264.mp4 ! "
+      "nvstreammux name=m batch-size=1 width=1920 height=1080 ! "
+      "dgaccelerator name=dgaccelerator model-name=%s server-ip=%s cloud-token=%s processing-width=%d processing-height=%d ! "
+      "fakesink",
+      model_name, server_ip, cloud_token, procW, procH);
+  GstElement *pipeline = gst_parse_launch(pipeline_description, &error);
+  if (error) {
+    g_printerr("Failed to create the pipeline: %s\n", error->message);
+    g_error_free(error);
+    return nullptr;
+  }
+  std::cout << "\n\tTesting pipeline: " << pipeline_description << "\n";
+  g_free(pipeline_description);
   return pipeline;
 }
 
@@ -99,7 +99,6 @@ TEST_F(GStreamerPluginTest, RunTestPipelines) {
 
 // Test the plugin's robustness
 TEST_F(GStreamerPluginTest, Robustness) {
-	// gst_update_registry();
 	GstElement* dgaccelerator = gst_element_factory_make("dgaccelerator", "test_dgaccelerator");
   	ASSERT_NE(dgaccelerator, nullptr);
 
@@ -167,7 +166,7 @@ TEST_F(GStreamerPluginTest, Robustness) {
 		{
 			try {
 				gst_element_set_state(pipeline3, GST_STATE_PLAYING);
-				std::this_thread::sleep_for(std::chrono::seconds(1)); // Add a one-second wait
+				g_usleep(2 * G_USEC_PER_SEC);  // Add a 2-second wait
 			} catch (const std::runtime_error& e) {
 				std::cerr << "Caught runtime error: " << e.what() << std::endl;
 				throw;
@@ -181,14 +180,13 @@ TEST_F(GStreamerPluginTest, Robustness) {
 		{
 			try {
 				gst_element_set_state(pipeline4, GST_STATE_PLAYING);
-				std::this_thread::sleep_for(std::chrono::seconds(1)); // Add a one-second wait
+				g_usleep(2 * G_USEC_PER_SEC);  // Add a 2-second wait
 			} catch (const std::runtime_error& e) {
 				std::cerr << "Caught runtime error: " << e.what() << std::endl;
 				throw;
 			}
 		}, std::runtime_error);
 	gst_object_unref(pipeline4);
-
 
 	gst_object_unref(dgaccelerator);
 }
@@ -198,5 +196,10 @@ int main(int argc, char **argv) {
 	gst_init(&argc, &argv);
 
 	::testing::InitGoogleTest(&argc, argv);
+
+	// Use SingleThreaded test environment (quickfix)
+	// ::testing::Environment* const env = ::testing::AddGlobalTestEnvironment(new ::testing::Environment);
+	// env->SetUp();
+
 	return RUN_ALL_TESTS();
 }
