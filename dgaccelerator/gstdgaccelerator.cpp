@@ -265,6 +265,7 @@ static void gst_dgaccelerator_init( GstDgAccelerator *dgaccelerator )
 	dgaccelerator->gpu_id = DEFAULT_GPU_ID;
 	dgaccelerator->model_name = const_cast< char * >( DEFAULT_MODEL_NAME );
 	dgaccelerator->server_ip = const_cast< char * >( DEFAULT_SERVER_IP );
+	dgaccelerator->cloud_token = const_cast< char * >( DEFAULT_CLOUD_TOKEN );
 	dgaccelerator->box_color = DEFAULT_BOX_COLOR;
 	dgaccelerator->drop_frames = DEFAULT_DROP_FRAMES;
 
@@ -410,7 +411,7 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 	GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR( btrans );
 	// NvBufSurface params for buffer creation
 	NvBufSurfaceCreateParams create_params;
-
+	// Creates the init params for our context
 	DgAcceleratorInitParams init_params =
 		{ dgaccelerator->processing_width, dgaccelerator->processing_height, "", "", 0, "", dgaccelerator->drop_frames };
 	snprintf( init_params.model_name, 128, "%s", dgaccelerator->model_name );    // Sets the model name
@@ -439,6 +440,7 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 	init_params.numInputStreams = batch_size;  // Sets the number of input streams
 	gst_query_unref( queryparams );
 
+	// Initialize our context with the init params structure
 	dgaccelerator->dgacceleratorlib_ctx = DgAcceleratorCtxInit( &init_params );
 
 	CHECK_CUDA_STATUS( cudaStreamCreate( &dgaccelerator->cuda_stream ), "Could not create cuda stream" );
@@ -447,6 +449,7 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 	if( dgaccelerator->inter_buf )
 		NvBufSurfaceDestroy( dgaccelerator->inter_buf );
 	dgaccelerator->inter_buf = NULL;
+
 	// handle box color for drawing
 	switch( dgaccelerator->box_color )
 	{
@@ -817,6 +820,7 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "NvDsBatchMeta not found for input buffer." ), ( NULL ) );
 		return GST_FLOW_ERROR;
 	}
+	
 
 	// sets the scaling parameters for the frame and scales and converts the
 	// frame using the get_converted_mat function
@@ -847,10 +851,20 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		// the metadata for the full frame
 		// Output is a DgAcceleratorOutput object!
 		output = DgAcceleratorProcess( dgaccelerator->dgacceleratorlib_ctx, dgaccelerator->cvmat->data );
+		
+		// Add a check here to return GST_FLOW_ERROR with the correct error
+		// if( error_found )
+		// {
+		// 	GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "error message" ), ( NULL ) );
+		// 	flow_ret = GST_FLOW_ERROR;
+		//	goto error;
+		// }
+
 		// Attach the metadata for the full frame
 		attach_metadata_full_frame( dgaccelerator, frame_meta, scale_ratio, output, i );
 		i++;
 	}
+	
 	flow_ret = GST_FLOW_OK;
 
 error:

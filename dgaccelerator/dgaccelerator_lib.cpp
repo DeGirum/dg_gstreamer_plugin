@@ -102,9 +102,8 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 
 	DG::ModelParamsWriter mparams;  // Model Parameters writer to pass to the model
 
-	// Validate model name here:
 	if( modelNameStr.find( '/' ) == std::string::npos )  // Check if requesting a local model
-	{
+	{	// Validate model name here:
 		std::vector< DG::ModelInfo > modelList;
 		DG::modelzooListGet( serverIP, modelList );
 		auto model_id = DG::modelFind( serverIP, { modelNameStr } );
@@ -116,11 +115,29 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 				std::cout << m.name << ", WxH: " << m.W << "x" << m.H << "\n";
 			throw std::runtime_error( "Model '" + modelNameStr + "' is not found in model zoo" );
 		}
+		// Validate model width/height here:
+		if ( initParams->processingHeight != model_id.H )
+		{
+			throw std::runtime_error( "Property processing-height does not match model." );
+			return nullptr;
+		}
+		if ( initParams->processingWidth != model_id.W )
+		{
+			throw std::runtime_error( "Property processing-width does not match model.");
+			return nullptr;
+		}
 	}
-	else  // Cloud model requested, set the token in model params
-	{
-		if ( initParams->cloud_token != "" )
+	else// Cloud model requested, set the token in model params
+	{	// Can't validate cloud model name or cloud token. Happens in PLAYING state
+		// Instead we at least can check if cloud token is missing
+		if (strlen(initParams->cloud_token) == 0){
+			throw std::runtime_error( "No cloud token provided for the chosen cloud model.");
+			return nullptr;
+		}
+		else{
 			mparams.CloudToken_set( initParams->cloud_token );
+		}
+		// Validation of cloud model existence and width/height match happens in PLAYING state.
 	}
 
 	// Callback function for parsing the model inference data for a frame
@@ -141,6 +158,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 			ctx->failReason = possible_error;
 			goto fail;
 		}
+		// Check for non-empty response containing array (happy case for 'objects have been detected')
 		if( strcmp( resp.type_name(), "array" ) == 0 && response.dump() != "[]" )
 		{
 			// Iterate over all of the detected objects
@@ -174,6 +192,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 
 	// Initialize the model with the parameters. Internal frame queue size set to 48
 	ctx->model.reset( new DG::AIModelAsync( serverIP, modelNameStr, callback, mparams, 48u ) );
+	// runtime error will happen if invalid modelname or server ip is set.
 
 	std::cout << "\nMODEL SUCCESSFULLY INITIALIZED\n\n";
 
@@ -203,16 +222,18 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 	ctx->curIndex %= RING_BUFFER_SIZE;
 	int curFrameIndex = ctx->curIndex++;
 
-	// If an error happens during inference
-	// std::string possible_error = ctx->model->lastError();
-	// if( !possible_error.empty() ){
-	// 	throw std::runtime_error( possible_error );
-	// }
+	// If an error happens during inference (runtime validation)
 	if ( ctx->failed )
 	{
 		// DgAcceleratorCtxDeinit (ctx);
 		throw std::runtime_error ( ctx->failReason );
+		// GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( ctx->failReason ), ( NULL ) );
 	}
+	// switch to lastError() :
+	// std::string possible_error = ctx->model->lastError();
+	// if( !possible_error.empty() ){
+	// 	throw std::runtime_error( possible_error );
+	// }
 
 	// Frame skip implementation:
 	if( ctx->initParams.drop_frames )
