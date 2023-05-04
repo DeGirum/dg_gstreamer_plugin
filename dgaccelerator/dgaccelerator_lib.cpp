@@ -43,11 +43,9 @@ using json_ld = nlohmann::basic_json< std::map, std::vector, std::string, bool, 
 int NUM_INPUT_STREAMS;                     // Number of input streams
 int RING_BUFFER_SIZE;                      // Size of circular queue of output objects
 int FRAME_DIFF_LIMIT;                      // Maximum number of frames waiting to be processed
-std::vector< DgAcceleratorOutput * > out;  // Vector of pointers to output structs, for circular buffer implementation
 
 
-// Clock for counting total duration
-std::chrono::time_point< std::chrono::high_resolution_clock > start_time;
+
 
 // parseOutput function declaration
 void parseOutput(const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx);
@@ -61,7 +59,11 @@ struct DgAcceleratorCtx
 	size_t diff = 0;             // Counter for # of frames waiting for callback at any given moment
 	size_t framesProcessed = 0;  // Frame count for FPS calculation, careful with uint overflow.
 	unsigned int curIndex;       // circular buffer index implementation
-
+	// Clock for counting total duration
+	std::chrono::time_point< std::chrono::high_resolution_clock > start_time;
+	// Vector of pointers to output structs, for circular buffer implementation
+	std::vector< DgAcceleratorOutput * > out;  
+	
 	// Temporary error handling without lastError()
 	bool failed = false;
 	std::string failReason;
@@ -89,8 +91,8 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	FRAME_DIFF_LIMIT = std::max( 3, RING_BUFFER_SIZE - 1 );
 
 	// Initialize the vector of output objects.
-	out.resize( RING_BUFFER_SIZE );
-	for( auto &elem : out )
+	ctx->out.resize( RING_BUFFER_SIZE );
+	for( auto &elem : ctx->out )
 	{
 		elem = (DgAcceleratorOutput *)calloc( 1, sizeof( DgAcceleratorOutput ) );
 	}
@@ -147,7 +149,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 
 		unsigned int index = std::stoi( fr );  // Index of the Output struct to fill
 		// Reset the output struct:
-		std::memset( out[ index ], 0, sizeof( DgAcceleratorObject ) );
+		std::memset( ctx->out[ index ], 0, sizeof( DgAcceleratorObject ) );
 
 		// Check for errors during inference
 		std::string possible_error = DG::errorCheck( response );
@@ -158,7 +160,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 			goto fail;
 		}
 		// Parse the json output, fill output structure using processed output
-		parseOutput(response, index, out, ctx);
+		parseOutput(response, index, ctx->out, ctx);
 	fail:
 		ctx->framesProcessed++;
 		ctx->diff--;  // Decrement # of frames waiting to be processed
@@ -171,7 +173,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	std::cout << "\nMODEL SUCCESSFULLY INITIALIZED\n\n";
 
 	// Start the clock for counting total duration
-	start_time = std::chrono::high_resolution_clock::now();
+	ctx->start_time = std::chrono::high_resolution_clock::now();
 
 	return ctx;
 }
@@ -198,20 +200,20 @@ void parseOutput(const json &response, const unsigned int &index, std::vector< D
         // Iterate over all of the detected objects
         for (int i = 0; i < response.size(); i++)
         {
-            out[index]->numObjects++;
+            ctx->out[index]->numObjects++;
             json_ld newresp = response[i]; // Output from model is a json array, so convert to single element
             std::vector<long double> bbox = newresp["bbox"].get<std::vector<long double>>();
             std::string label = newresp["label"];
             int category_id = newresp["category_id"].get<int>();
             long double score = newresp["score"].get<long double>();
-            out[index]->object[i] = (DgAcceleratorObject){
+            ctx->out[index]->object[i] = (DgAcceleratorObject){
                 std::roundf(bbox[0]),                 // left
                 std::roundf(bbox[1]),                 // top
                 std::roundf(bbox[2] - bbox[0]),       // width
                 std::roundf(bbox[3] - bbox[1]),       // height
                 ""                                    // label, must be of type char[]
             };
-            snprintf(out[index]->object[i].label, 64, "%s", label.c_str()); // Sets the label
+            snprintf(ctx->out[index]->object[i].label, 64, "%s", label.c_str()); // Sets the label
         }
     }
     else if (strcmp(response.type_name(), "object") == 0)
@@ -278,7 +280,7 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 		// This passes the data buffer and the current frame output object index to work on
 		frameMat.release();
 	}
-	return out[ curFrameIndex ];
+	return ctx->out[ curFrameIndex ];
 
 skip:
 	// Reach here if the model can't keep up with all the incoming frames
@@ -305,17 +307,18 @@ void DgAcceleratorCtxDeinit( DgAcceleratorCtx *ctx )
 
 	// Calculate FPS
 	auto end_time = std::chrono::high_resolution_clock::now();
-	auto duration = std::chrono::duration_cast< std::chrono::milliseconds >( end_time - start_time );
+	auto duration = std::chrono::duration_cast< std::chrono::milliseconds >( end_time - ctx->start_time );
 	std::cout << "Frames processed / duration (FPS) :" << 1000 * ( (long double)ctx->framesProcessed / duration.count() );
 
 	ctx->framesProcessed = 0;
 	ctx->diff = 0;
+	
 
 	// Reset our model
 	ctx->model.reset();
 	free( ctx );
 	// Free output objects
-	for( auto &elem : out )
+	for( auto &elem : ctx->out )
 	{
 		delete elem;
 		elem = nullptr;
