@@ -49,6 +49,9 @@ std::vector< DgAcceleratorOutput * > out;  // Vector of pointers to output struc
 // Clock for counting total duration
 std::chrono::time_point< std::chrono::high_resolution_clock > start_time;
 
+// parseOutput function declaration
+void parseOutput(const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx);
+
 // Context for the element, holds initParams for the model
 // and a smart pointer to the model
 struct DgAcceleratorCtx
@@ -139,16 +142,12 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 		}
 		// Validation of cloud model existence and width/height match happens in PLAYING state.
 	}
-
 	// Callback function for parsing the model inference data for a frame
 	auto callback = [ ctx ]( const json &response, const std::string &fr ) {
 
 		unsigned int index = std::stoi( fr );  // Index of the Output struct to fill
 		// Reset the output struct:
 		std::memset( out[ index ], 0, sizeof( DgAcceleratorObject ) );
-
-		// Parse the json output, fill output structure using processed output
-		json_ld resp = response;
 
 		// Check for errors during inference
 		std::string possible_error = DG::errorCheck( response );
@@ -158,33 +157,8 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 			ctx->failReason = possible_error;
 			goto fail;
 		}
-		// Check for non-empty response containing array (happy case for 'objects have been detected')
-		if( strcmp( resp.type_name(), "array" ) == 0 && response.dump() != "[]" )
-		{
-			// Iterate over all of the detected objects
-			for( int i = 0; i < resp.size(); i++ )
-			{
-				out[ index ]->numObjects++;
-				json_ld newresp = resp[ i ];  // Output from model is a json array, so convert to single element
-				std::vector< long double > bbox = newresp[ "bbox" ].get< std::vector< long double > >();
-				std::string label = newresp[ "label" ];
-				int category_id = newresp[ "category_id" ].get< int >();
-				long double score = newresp[ "score" ].get< long double >();
-				out[ index ]->object[ i ] = ( DgAcceleratorObject ){
-					std::roundf( bbox[ 0 ] ),              // left
-					std::roundf( bbox[ 1 ] ),              // top
-					std::roundf( bbox[ 2 ] - bbox[ 0 ] ),  // width
-					std::roundf( bbox[ 3 ] - bbox[ 1 ] ),  // height
-					""                                     // label, must be of type char[]
-				};
-				snprintf( out[ index ]->object[ i ].label, 64, "%s", label.c_str() );  // Sets the label
-			}
-		}
-		else if( strcmp( resp.type_name(), "object" ) == 0 )
-		{  // Model gave a bad result not caught by errorcheck
-			ctx->failed = true;
-			ctx->failReason = response.dump();
-		}
+		// Parse the json output, fill output structure using processed output
+		parseOutput(response, index, out, ctx);
 	fail:
 		ctx->framesProcessed++;
 		ctx->diff--;  // Decrement # of frames waiting to be processed
@@ -201,6 +175,52 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 
 	return ctx;
 }
+///
+/// \brief Parses the output of the DgAccelerator model and fills in a DgAcceleratorOutput instance
+///
+/// This function parses the output of the DgAccelerator model, which is expected to be a JSON array containing
+/// information about detected objects. It populates a DgAcceleratorOutput instance with information about the
+/// detected objects. The function is called once for each frame.
+///
+/// \param[in] response The JSON response from the model
+/// \param[in] index The index of the output instance to populate
+/// \param[in] out A vector of pointers to DgAcceleratorOutput instances to populate
+/// \param[in] ctx A pointer to the DgAcceleratorCtx instance
+///
+/// \return void
+///
+void parseOutput(const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx) {
+    // to do: add a check here for which model type we are using. Currently only obj detection implemented
+
+    // Check for non-empty response containing array (happy case for 'objects have been detected')
+    if (strcmp(response.type_name(), "array") == 0 && response.dump() != "[]")
+    {
+        // Iterate over all of the detected objects
+        for (int i = 0; i < response.size(); i++)
+        {
+            out[index]->numObjects++;
+            json_ld newresp = response[i]; // Output from model is a json array, so convert to single element
+            std::vector<long double> bbox = newresp["bbox"].get<std::vector<long double>>();
+            std::string label = newresp["label"];
+            int category_id = newresp["category_id"].get<int>();
+            long double score = newresp["score"].get<long double>();
+            out[index]->object[i] = (DgAcceleratorObject){
+                std::roundf(bbox[0]),                 // left
+                std::roundf(bbox[1]),                 // top
+                std::roundf(bbox[2] - bbox[0]),       // width
+                std::roundf(bbox[3] - bbox[1]),       // height
+                ""                                    // label, must be of type char[]
+            };
+            snprintf(out[index]->object[i].label, 64, "%s", label.c_str()); // Sets the label
+        }
+    }
+    else if (strcmp(response.type_name(), "object") == 0)
+    { // Model gave a bad result not caught by errorcheck
+        ctx->failed = true;
+        ctx->failReason = response.dump();
+    }
+}
+
 
 ///
 /// \brief Main process function for the DgAccelerator model
