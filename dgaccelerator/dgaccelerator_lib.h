@@ -27,7 +27,7 @@ struct DgAcceleratorInitParams
 	bool drop_frames;
 };
 
-// Detected/Labelled object bbox structure (Detection Models)
+// Detected/Labelled object bbox structure from Object Detection Model
 struct DgAcceleratorObject
 {
 	float left;
@@ -37,11 +37,29 @@ struct DgAcceleratorObject
 	char label[DG_MAX_LABEL_SIZE];
 };
 
+// Result from Pose Estimation Model
+struct DgAcceleratorPose
+{
+	// A Landmark. Inference produces a set of these, together they define the pose
+	struct Landmark
+	{
+		std::pair< double, double > point;	// Coordinate of landmark. [0] = x, [1] = y
+		std::vector< int > connection;		// indices of landmarks this one connects to
+		char label[ DG_MAX_LABEL_SIZE ];	// label of the landmark
+		int landmark_class;					// index of the landmark
+	};
+	std::vector< Landmark > landmarks;		// vector of landmarks defining the pose
+};
+
 // Output data returned after processing
 struct DgAcceleratorOutput
 {
+	// Detection models:
 	int numObjects;
 	DgAcceleratorObject object[MAX_OBJ_PER_FRAME]; // Allocates room for MAX_OBJ_PER_FRAME objects
+	// Pose Estimation models:
+	int numPoses;
+	DgAcceleratorPose pose[MAX_OBJ_PER_FRAME];
 };
 
 // Initialize library

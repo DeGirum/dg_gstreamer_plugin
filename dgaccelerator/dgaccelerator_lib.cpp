@@ -44,11 +44,31 @@ int NUM_INPUT_STREAMS;                     // Number of input streams
 int RING_BUFFER_SIZE;                      // Size of circular queue of output objects
 int FRAME_DIFF_LIMIT;                      // Maximum number of frames waiting to be processed
 
-
-
-
 // parseOutput function declaration
 void parseOutput(const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx);
+
+// Enum to hold the types of models
+enum ModelType {
+	SEGMENTATION,
+    OBJ_DETECTION,
+    POSE_ESTIMATION,
+	CLASSIFICATION,
+	ERROR
+};
+
+// ModelType from json function
+ModelType determineModelType(const json &response) {
+    if( !response.is_array() )
+		return ERROR;
+	if( response[ 0 ].contains( "data" ) && response[ 0 ].contains( "size" ) && response[ 0 ].contains( "shape" ) )
+		return SEGMENTATION;
+	if( response[ 0 ].contains( "landmarks" ) && response[ 0 ].contains( "score" ) )
+		return POSE_ESTIMATION;
+	if( response[ 0 ].contains( "bbox" ) && response[ 0 ].contains( "label" ) )
+		return OBJ_DETECTION;
+	return CLASSIFICATION;
+}
+
 
 // Context for the element, holds initParams for the model
 // and a smart pointer to the model
@@ -90,7 +110,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	// Set the ceiling for frame skipping
 	FRAME_DIFF_LIMIT = std::max( 3, RING_BUFFER_SIZE - 1 );
 
-	// Initialize the vector of output objects.
+	// Initialize the vector of output objects
 	ctx->out.resize( RING_BUFFER_SIZE );
 	for( auto &elem : ctx->out )
 	{
@@ -148,8 +168,9 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	auto callback = [ ctx ]( const json &response, const std::string &fr ) {
 
 		unsigned int index = std::stoi( fr );  // Index of the Output struct to fill
-		// Reset the output struct:
-		std::memset( ctx->out[ index ], 0, sizeof( DgAcceleratorObject ) );
+		// Reset the output structs:
+		// std::memset( ctx->out[ index ], 0, sizeof( DgAcceleratorObject ) );
+		std::memset( ctx->out[ index ], 0, sizeof( DgAcceleratorOutput ) );
 
 		// Check for errors during inference
 		std::string possible_error = DG::errorCheck( response );
@@ -192,14 +213,46 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 /// \return void
 ///
 void parseOutput(const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx) {
-    // to do: add a check here for which model type we are using. Currently only obj detection implemented
+	if (response.dump() == "[]")
+		return;		// empty frame: no inference results
+    // Check for which model type we are using, based on the json.
+	ModelType type = determineModelType(response);
 
-    // Check for non-empty response containing array (happy case for 'objects have been detected')
-    if (strcmp(response.type_name(), "array") == 0 && response.dump() != "[]")
+
+	if (type == POSE_ESTIMATION)
+	{
+		int numPoses = 0;
+		for( const nlohmann::json& pose : response )
+		{
+			if( !pose.contains( "landmarks" ) || !pose.contains( "score" ) )
+				continue;
+			
+			if (numPoses >= MAX_OBJ_PER_FRAME)
+				break;
+
+			// Iterate over all landmarks in the JSON
+			for( const nlohmann::json& landmark : pose[ "landmarks" ] )
+			{
+				DgAcceleratorPose::Landmark lm;
+				lm.landmark_class = landmark[ "category_id" ].get< int >();
+				strncpy(lm.label, landmark[ "label" ].get< std::string >().c_str(), DG_MAX_LABEL_SIZE - 1);
+				lm.label[DG_MAX_LABEL_SIZE - 1] = '\0';
+				lm.connection = landmark[ "connect" ].get< std::vector< int > >();
+				std::vector< double > point  = landmark[ "landmark" ].get< std::vector< double > >();
+				lm.point = { point[ 0 ], point[ 1 ] };
+				ctx->out[index]->pose[numPoses].landmarks.push_back(lm);
+			}
+			numPoses++;
+		}
+		ctx->out[index]->numPoses = numPoses;
+	}
+    else if (type == OBJ_DETECTION)
     {
         // Iterate over all of the detected objects
         for (int i = 0; i < response.size(); i++)
         {
+			if (ctx->out[index]->numObjects >= MAX_OBJ_PER_FRAME)
+				break;
             ctx->out[index]->numObjects++;
             json_ld newresp = response[i]; // Output from model is a json array, so convert to single element
             std::vector<long double> bbox = newresp["bbox"].get<std::vector<long double>>();

@@ -897,7 +897,7 @@ guint batch_id )
 	NvDsBatchMeta *batch_meta = frame_meta->base_meta.batch_meta;
 	NvDsObjectMeta *object_meta = NULL;
 	static gchar font_name[] = "Serif";
-	// For each object
+	// Loop to attach each object in DgAcceleratorOutput
 	for( gint i = 0; i < output->numObjects; i++ )
 	{
 		DgAcceleratorObject *obj = &output->object[ i ];
@@ -928,7 +928,7 @@ guint batch_id )
 
 		object_meta->object_id = UNTRACKED_OBJECT_ID;
 		g_strlcpy( object_meta->obj_label, obj->label, MAX_LABEL_SIZE );
-		// display_text required heap allocated memory
+		// display_text requires heap allocated memory
 		text_params.display_text = g_strdup( obj->label );
 		// Display text above the left top corner of the object
 		text_params.x_offset = rect_params.left;
@@ -942,8 +942,67 @@ guint batch_id )
 		text_params.font_params.font_color = ( NvOSD_ColorParams ){ 1, 1, 1, 1 };
 
 		nvds_add_obj_meta_to_frame( frame_meta, object_meta, NULL );
-		frame_meta->bInferDone = TRUE;
+		
 	}
+	// Loop to attach each pose in DgAcceleratorOutput
+	for (gint j = 0; j < output->numPoses; j++)
+	{
+		DgAcceleratorPose *pose = &output->pose[j];
+		NvDsDisplayMeta *dmeta = nvds_acquire_display_meta_from_pool(batch_meta);
+		nvds_add_display_meta_to_frame(frame_meta, dmeta);
+
+		for (const auto &landmark : pose->landmarks)
+		{
+			int x = static_cast<int>(landmark.point.first);
+			int y = static_cast<int>(landmark.point.second);
+			// scale back
+			x /= scale_ratio;
+			y /= scale_ratio;
+			if (dmeta->num_circles == MAX_ELEMENTS_IN_DISPLAY_META)
+			{
+				dmeta = nvds_acquire_display_meta_from_pool(batch_meta);
+				nvds_add_display_meta_to_frame(frame_meta, dmeta);
+			}
+			// Add circle at each landmark
+			NvOSD_CircleParams &cparams = dmeta->circle_params[dmeta->num_circles];
+			cparams.xc = x;
+			cparams.yc = y;
+			cparams.radius = 8;
+			cparams.circle_color = NvOSD_ColorParams{0, 255, 0, 1};
+			cparams.has_bg_color = 1;
+			cparams.bg_color = NvOSD_ColorParams{200, 0, 40, 1};
+			dmeta->num_circles++;
+
+			// Add lines
+			for (int connection_index : landmark.connection)
+			{
+				if (connection_index >= 0 && connection_index < pose->landmarks.size())
+				{
+					auto &connected_landmark = pose->landmarks[connection_index];
+					int x1 = static_cast<int>(connected_landmark.point.first);
+					int y1 = static_cast<int>(connected_landmark.point.second);
+					// scale back
+					x1 /= scale_ratio;
+					y1 /= scale_ratio;
+					if (dmeta->num_lines == MAX_ELEMENTS_IN_DISPLAY_META)
+					{
+						dmeta = nvds_acquire_display_meta_from_pool(batch_meta);
+						nvds_add_display_meta_to_frame(frame_meta, dmeta);
+					}
+					NvOSD_LineParams &lparams = dmeta->line_params[dmeta->num_lines];
+					lparams.x1 = x;
+					lparams.x2 = x1;
+					lparams.y1 = y;
+					lparams.y2 = y1;
+					lparams.line_width = 3;
+					lparams.line_color = NvOSD_ColorParams{255, 0, 0, 1};
+					dmeta->num_lines++;
+				}
+			}
+		}
+		// nvds_add_display_meta_to_frame(frame_meta, dmeta);
+	}
+	frame_meta->bInferDone = TRUE;
 }
 
 ///
