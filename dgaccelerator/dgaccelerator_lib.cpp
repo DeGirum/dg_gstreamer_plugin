@@ -300,9 +300,11 @@ void parseOutput(const json &response, const unsigned int &index, std::vector< D
 		// Now copy byte_vector.data() into the int* arr
 		std::copy(byte_vector.data(), byte_vector.data() + byte_vector.size(), arr);
 		// Store the class_map in the DgAcceleratorOutput structure
-		ctx->out[index]->segMap[0].class_map = arr;
-		ctx->out[index]->segMap[0].mask_width = mask_width;
-		ctx->out[index]->segMap[0].mask_height = mask_height;
+		ctx->out[index]->segMap[0] = (DgAcceleratorSegmentation){
+                arr,
+                mask_width,
+                mask_height
+        };
 		ctx->out[index]->numMaps = 1;
 	}
     else if (type == ERROR || strcmp(response.type_name(), "object") == 0)
