@@ -1029,14 +1029,66 @@ guint batch_id )
 	// Segmentation loop in DgAcceleratorOutput
 	for (int i = 0; i < output->numMaps; i++) // most likely only happens once, => remove numMaps entirely
 	{
-		std::cout << "Entered segmentation loop, filling in the segMap of index " << i << "\n";
+		// std::cout << "Entered segmentation loop, filling in the segMap of index " << i << "\n";
 		DgAcceleratorSegmentation *seg = &output->segMap[i];
+
+		////// RESCALE THE MAP IMPLEMENTATION /////////////////////////
+		/*
+		// Resize the segmentation map to original frame dimensions
+		// Set width / height to be the source frame width / height
+		int FRAME_WIDTH = frame_meta->source_frame_width;
+		int FRAME_HEIGHT = frame_meta->source_frame_height;
+		// Create a new class map with the desired dimensions
+		int* newClassMap = new int[FRAME_WIDTH * FRAME_HEIGHT];
+
+		// For each pixel in the new map
+        for(size_t y=0; y<FRAME_HEIGHT; ++y)
+        {
+            for(size_t x=0; x<FRAME_WIDTH; ++x)
+            {   // Compute corresponding coordinates in the old map using nearest neighbor interpolation
+                int old_x = x * seg->mask_width / FRAME_WIDTH;
+                int old_y = y * seg->mask_height / FRAME_HEIGHT;
+                // Copy the class
+                newClassMap[y*FRAME_WIDTH+x] = seg->class_map[old_y*seg->mask_width+old_x];
+            }
+        }
+		// Overwrite the old class map and dimensions
+		delete[] seg->class_map; // delete first, then replace
+		seg->class_map = newClassMap;
+		seg->mask_width = FRAME_WIDTH;
+		seg->mask_height = FRAME_HEIGHT;
+		*/
+		////// END RESCALE THE MAP IMPLEMENTATION /////////////////////
+		
+		////// OPENCV RESCALE IMPLEMENTATION ///////////////////////
+		// Resize the segmentation map to original frame dimensions
+		// Set width / height to be the source frame width / height
+		int FRAME_WIDTH = frame_meta->source_frame_width;
+		int FRAME_HEIGHT = frame_meta->source_frame_height;
+		// Convert class_map to cv::Mat
+		cv::Mat classMapMat(seg->mask_height, seg->mask_width, CV_32S, seg->class_map);
+		// Create a new cv::Mat for the resized map
+		cv::Mat resizedClassMapMat;
+		// Resize the class map
+		cv::resize(classMapMat, resizedClassMapMat, cv::Size(FRAME_WIDTH, FRAME_HEIGHT), 0, 0, cv::INTER_NEAREST);
+		// Create a new class map with the resized dimensions
+		int* newClassMap = new int[FRAME_WIDTH * FRAME_HEIGHT];
+		// Copy the resized class map to the new class map
+		std::memcpy(newClassMap, resizedClassMapMat.data, FRAME_WIDTH * FRAME_HEIGHT * sizeof(int));
+		// Overwrite the old class map and dimensions
+		delete[] seg->class_map; // delete first, then replace
+		seg->class_map = newClassMap;
+		seg->mask_width = FRAME_WIDTH;
+		seg->mask_height = FRAME_HEIGHT;
+		////// END OPENCV RESCALE IMPLEMENTATION ///////////////////
+
 		NvDsInferSegmentationOutput segOutput;
 		segOutput.classes = 20;  // number of classes supported by the network
-		segOutput.width = seg->mask_width;  // width of the segmentation map
-		segOutput.height = seg->mask_height;  // height of the segmentation map
 		segOutput.class_map = seg->class_map;
+		segOutput.width = seg->mask_width;
+		segOutput.height = seg->mask_height;
 		segOutput.class_probability_map = NULL;
+
 		// attach the segmentation metadata to the frame
 		attachSegmentationMetadata(frame_meta, segOutput);  
 	}
@@ -1044,12 +1096,12 @@ guint batch_id )
 }
 //////////// SEGMENTATION META FUNCTIONS //////////////////
 static void releaseSegmentationMeta(gpointer data, gpointer user_data) {
-	std::cout << "entering release func\n";
+	// std::cout << "entering release func\n";
     NvDsUserMeta* user_meta = (NvDsUserMeta*)data;
     NvDsInferSegmentationMeta* meta =
         (NvDsInferSegmentationMeta*)user_meta->user_meta_data;
     if (meta->priv_data) {
-		std::cout << "uh oh, meta->privdata exists in release func\n";
+		// std::cout << "uh oh, meta->privdata exists in release func\n";
         // delete (dsis::SharedIBatchBuffer*)(meta->priv_data);
     } else {
         // g_free(meta->class_map);
@@ -1059,7 +1111,7 @@ static void releaseSegmentationMeta(gpointer data, gpointer user_data) {
 }
 
 static gpointer copySegmentationMeta(gpointer data, gpointer user_data) {
-	std::cout << "entering copy func\n";
+	// std::cout << "entering copy func\n";
     NvDsUserMeta* src_user_meta = (NvDsUserMeta*)data;
     NvDsInferSegmentationMeta* src_meta =
         (NvDsInferSegmentationMeta*)src_user_meta->user_meta_data;
@@ -1082,7 +1134,7 @@ static gpointer copySegmentationMeta(gpointer data, gpointer user_data) {
 void
 attachSegmentationMetadata( NvDsFrameMeta* frameMeta, const NvDsInferSegmentationOutput& segOutput )
 {
-	std::cout << "entering attach func\n";
+	// std::cout << "entering attach func\n";
     assert(frameMeta);
     NvDsBatchMeta* batchMeta = frameMeta->base_meta.batch_meta;
 

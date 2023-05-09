@@ -200,8 +200,8 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 /// \brief Parses the output of the DgAccelerator model and fills in a DgAcceleratorOutput instance
 ///
 /// This function parses the output of the DgAccelerator model, which is expected to be a JSON array containing
-/// information about detected objects. It populates a DgAcceleratorOutput instance with information about the
-/// detected objects. The function is called once for each frame.
+/// information about inference results. It populates a DgAcceleratorOutput instance with the
+/// inference results. The function is called once for each frame.
 ///
 /// \param[in] response The JSON response from the model
 /// \param[in] index The index of the output instance to populate
@@ -213,6 +213,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 void parseOutput(const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx) {
 	if (response.dump() == "[]")
 		return;		// empty frame: no inference results
+
     // Check for which model type we are using, based on the json.
 	ModelType type = determineModelType(response);
 	if (type == POSE_ESTIMATION)
@@ -290,19 +291,14 @@ void parseOutput(const json &response, const unsigned int &index, std::vector< D
 			return;
 		// Convert the json -> DG::BasicTensor
 		DG::BasicTensor parsed_result(DG::JsonHelper::tensorDeserialize(response[0]));
-		const size_t mask_width = parsed_result.shape()[1];
-		const size_t mask_height = parsed_result.shape()[2];
-		// std::cout << "Width / height: " << mask_width << "/" << mask_height << "\n";
+		size_t mask_width = parsed_result.shape()[1];
+		size_t mask_height = parsed_result.shape()[2];
 		// Now parse the json into an int array mask
 		const auto &byte_vector = response[0]["data"].get_binary();
 		// Allocate an array on the heap
 		int* arr = new int[byte_vector.size()];
 		// Now copy byte_vector.data() into the int* arr
 		std::copy(byte_vector.data(), byte_vector.data() + byte_vector.size(), arr);
-
-		// resize it to the original size...
-
-
 		// Store the class_map in the DgAcceleratorOutput structure
 		ctx->out[index]->segMap[0].class_map = arr;
 		ctx->out[index]->segMap[0].mask_width = mask_width;
