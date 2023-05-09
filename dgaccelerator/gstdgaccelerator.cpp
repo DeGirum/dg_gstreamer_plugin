@@ -1025,39 +1025,41 @@ guint batch_id )
 
 		nvds_add_obj_meta_to_frame(frame_meta, object_meta, NULL);
 	}
-	/*
+	
 	// Segmentation loop in DgAcceleratorOutput
-	for (int i = 0; i < output->numMaps; i++) // most likely only happens once.
+	for (int i = 0; i < output->numMaps; i++) // most likely only happens once, => remove numMaps entirely
 	{
+		std::cout << "Entered segmentation loop, filling in the segMap of index " << i << "\n";
 		DgAcceleratorSegmentation *seg = &output->segMap[i];
-
 		NvDsInferSegmentationOutput segOutput;
-		segOutput.classes = 20;  // fill in with the number of classes supported by the network
-		segOutput.width = seg->mask_width;  // fill in with the width of the segmentation map
-		segOutput.height = seg->mask_height;  // fill in with the height of the segmentation map
+		segOutput.classes = 20;  // number of classes supported by the network
+		segOutput.width = seg->mask_width;  // width of the segmentation map
+		segOutput.height = seg->mask_height;  // height of the segmentation map
 		segOutput.class_map = seg->class_map;
 		segOutput.class_probability_map = NULL;
-
 		// attach the segmentation metadata to the frame
-		attachSegmentationMetadata(NULL, frame_meta, NULL, segOutput);  
-	} */
+		attachSegmentationMetadata(frame_meta, segOutput);  
+	}
 	frame_meta->bInferDone = TRUE;
 }
 //////////// SEGMENTATION META FUNCTIONS //////////////////
 static void releaseSegmentationMeta(gpointer data, gpointer user_data) {
+	std::cout << "entering release func\n";
     NvDsUserMeta* user_meta = (NvDsUserMeta*)data;
     NvDsInferSegmentationMeta* meta =
         (NvDsInferSegmentationMeta*)user_meta->user_meta_data;
     if (meta->priv_data) {
+		std::cout << "uh oh, meta->privdata exists in release func\n";
         // delete (dsis::SharedIBatchBuffer*)(meta->priv_data);
     } else {
-        g_free(meta->class_map);
-        g_free(meta->class_probabilities_map);
+        // g_free(meta->class_map);
+        // g_free(meta->class_probabilities_map);
     }
     delete meta;
 }
 
 static gpointer copySegmentationMeta(gpointer data, gpointer user_data) {
+	std::cout << "entering copy func\n";
     NvDsUserMeta* src_user_meta = (NvDsUserMeta*)data;
     NvDsInferSegmentationMeta* src_meta =
         (NvDsInferSegmentationMeta*)src_user_meta->user_meta_data;
@@ -1080,6 +1082,7 @@ static gpointer copySegmentationMeta(gpointer data, gpointer user_data) {
 void
 attachSegmentationMetadata( NvDsFrameMeta* frameMeta, const NvDsInferSegmentationOutput& segOutput )
 {
+	std::cout << "entering attach func\n";
     assert(frameMeta);
     NvDsBatchMeta* batchMeta = frameMeta->base_meta.batch_meta;
 
@@ -1094,7 +1097,7 @@ attachSegmentationMetadata( NvDsFrameMeta* frameMeta, const NvDsInferSegmentatio
     meta->class_map = segOutput.class_map;
     meta->class_probabilities_map = segOutput.class_probability_map;
     
-	// meta->priv_data = new dsis::SharedIBatchBuffer(buf);
+	meta->priv_data = NULL;
 
     user_meta->user_meta_data = meta;
     user_meta->base_meta.meta_type = (NvDsMetaType)NVDSINFER_SEGMENTATION_META;

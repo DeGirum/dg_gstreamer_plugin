@@ -64,12 +64,11 @@ struct DgAcceleratorSegmentation
 	// pointer to array for 2D pixel class map
     // pixel (x,y) is at index (y*width+x)
     int *class_map;
-	
 	size_t mask_width;
 	size_t mask_height;
 };
 
-// Output data returned after processing
+// Output data for 1 frame returned after processing
 struct DgAcceleratorOutput
 {
 	// Object Detection models:
