@@ -32,6 +32,7 @@
 #include "opencv2/imgproc/imgproc.hpp"
 
 // Degirum
+#include "gstdgaccelerator.h"
 #include "dgaccelerator_lib.h"
 #include "client/dg_client.h"
 #include "dg_file_utilities.h"
@@ -166,12 +167,10 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	}
 	// Callback function for parsing the model inference data for a frame
 	auto callback = [ ctx ]( const json &response, const std::string &fr ) {
-
 		unsigned int index = std::stoi( fr );  // Index of the Output struct to fill
 		// Reset the output structs:
 		// std::memset( ctx->out[ index ], 0, sizeof( DgAcceleratorObject ) );
 		std::memset( ctx->out[ index ], 0, sizeof( DgAcceleratorOutput ) );
-
 		// Check for errors during inference
 		std::string possible_error = DG::errorCheck( response );
 		if( ! possible_error.empty() )
@@ -217,7 +216,26 @@ void parseOutput(const json &response, const unsigned int &index, std::vector< D
 		return;		// empty frame: no inference results
     // Check for which model type we are using, based on the json.
 	ModelType type = determineModelType(response);
+	
+	/*
+	// colors for segmentation mask, BGR
+	const static cv::Scalar cvcolors[ 20 ] = { cv::Scalar( 255, 0, 0 ),	cv::Scalar( 0, 0, 255 ),   cv::Scalar( 0, 255, 0 ),
+                                         cv::Scalar( 0, 255, 255 ), cv::Scalar( 255, 255, 0 ), cv::Scalar( 255, 0, 255 ),
+                                         cv::Scalar( 0, 128, 255 ), cv::Scalar( 0, 255, 128 ), cv::Scalar( 128, 255, 0 ),
+                                         cv::Scalar( 255, 128, 0 ), cv::Scalar( 255, 0, 128 ), cv::Scalar( 128, 0, 255 ),
+                                         cv::Scalar( 0, 191, 255 ), cv::Scalar( 0, 255, 191 ), cv::Scalar( 191, 255, 0 ),
+                                         cv::Scalar( 255, 191, 0 ), cv::Scalar( 255, 64, 0 ),  cv::Scalar( 255, 0, 191 ),
+                                         cv::Scalar( 191, 0, 255 ), cv::Scalar( 64, 0, 255 ) };
 
+	// Convert to RGBA
+	NvOSD_ColorParams colors[20];
+	for (int i = 0; i < 20; i++) {
+		colors[i].red = cvcolors[i][2] / 255.0f;
+		colors[i].green = cvcolors[i][1] / 255.0f;
+		colors[i].blue = cvcolors[i][0] / 255.0f;
+		colors[i].alpha = 1.0f;
+	}
+	*/
 
 	if (type == POSE_ESTIMATION)
 	{
@@ -269,6 +287,55 @@ void parseOutput(const json &response, const unsigned int &index, std::vector< D
             snprintf(ctx->out[index]->object[i].label, 64, "%s", label.c_str()); // Sets the label
         }
     }
+	else if (type == CLASSIFICATION)
+	{
+		for( const nlohmann::json& object : response )
+		{
+			if (ctx->out[index]->k >= MAX_OBJ_PER_FRAME)
+				break;
+			if( !object.contains( "label" ) )
+				continue;
+			std::string label = object[ "label" ];
+			double score = object[ "score" ].get< double >();
+			ctx->out[ index ]->classifiedObject[ ctx->out[ index ]->k ] = ( DgAcceleratorClassObject ){
+				score,
+				""      // label, must be of type char[]
+			};
+			snprintf(ctx->out[index]->classifiedObject[ctx->out[index]->k].label, 64, "%s", label.c_str()); // Sets the label
+			ctx->out[index]->k++;
+		}
+	} /*
+	else if (type == SEGMENTATION)
+	{
+		// If meta data does not contain needed result, skip
+		if (!response[0].contains("data") || !response[0].contains("size") || !response[0].contains("shape"))
+			return;
+		// Convert the json -> DG::BasicTensor
+		DG::BasicTensor parsed_result(DG::JsonHelper::tensorDeserialize(response[0]));
+		int *p_parsed_result = parsed_result.data<int>();
+
+		if( p_parsed_result == nullptr )
+		{
+			std::cout << "parsed result is null\n";
+			return;
+		}
+		
+		const size_t mask_width = parsed_result.shape()[1];
+		const size_t mask_height = parsed_result.shape()[2];
+		
+		// Iterate through each row and column of the classification mask
+		for (size_t row = 0; row < mask_height; ++row) {
+			for (size_t col = 0; col < mask_width; ++col) {
+				std::cout << p_parsed_result[row * mask_width + col] << " ";
+			}
+			std::cout << std::endl;
+		}
+		// Store the class_map in the DgAcceleratorOutput structure
+		ctx->out[index]->segMap[ctx->out[index]->numMaps].class_map = p_parsed_result;
+		ctx->out[index]->segMap[ctx->out[index]->numMaps].mask_width = mask_width;
+		ctx->out[index]->segMap[ctx->out[index]->numMaps].mask_height = mask_height;
+		ctx->out[index]->numMaps++;
+	} */
     else if (strcmp(response.type_name(), "object") == 0)
     { // Model gave a bad result not caught by errorcheck
         ctx->failed = true;
@@ -300,8 +367,8 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 	// If an error happens during inference (runtime validation)
 	if ( ctx->failed )
 	{
-		// DgAcceleratorCtxDeinit (ctx);
 		throw std::runtime_error ( ctx->failReason );
+		// DgAcceleratorCtxDeinit (ctx);
 		// GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( ctx->failReason ), ( NULL ) );
 	}
 	// switch to lastError() :

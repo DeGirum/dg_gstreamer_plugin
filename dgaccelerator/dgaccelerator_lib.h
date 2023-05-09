@@ -27,7 +27,7 @@ struct DgAcceleratorInitParams
 	bool drop_frames;
 };
 
-// Detected/Labelled object bbox structure from Object Detection Model
+// Result from Object Detection Model
 struct DgAcceleratorObject
 {
 	float left;
@@ -51,15 +51,39 @@ struct DgAcceleratorPose
 	std::vector< Landmark > landmarks;		// vector of landmarks defining the pose
 };
 
+// Result from Classification Model
+struct DgAcceleratorClassObject
+{
+	double score;
+	char label [DG_MAX_LABEL_SIZE];
+};
+
+// Result from Segmentation Model
+struct DgAcceleratorSegmentation
+{
+	// pointer to array for 2D pixel class map
+    // pixel (x,y) is at index (y*width+x)
+    int *class_map;
+	
+	size_t mask_width;
+	size_t mask_height;
+};
+
 // Output data returned after processing
 struct DgAcceleratorOutput
 {
-	// Detection models:
+	// Object Detection models:
 	int numObjects;
 	DgAcceleratorObject object[MAX_OBJ_PER_FRAME]; // Allocates room for MAX_OBJ_PER_FRAME objects
 	// Pose Estimation models:
 	int numPoses;
 	DgAcceleratorPose pose[MAX_OBJ_PER_FRAME];
+	// Classification models:
+	int k;
+	DgAcceleratorClassObject classifiedObject[MAX_OBJ_PER_FRAME];
+	// Segmentation Models:
+	int numMaps;
+	DgAcceleratorSegmentation segMap [1];
 };
 
 // Initialize library

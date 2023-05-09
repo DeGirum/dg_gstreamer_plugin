@@ -40,7 +40,8 @@
 #include "gstnvdsmeta.h"
 #include "nvbufsurface.h"
 #include "nvbufsurftransform.h"
-
+#include "nvdsinfer_context.h"
+#include "gstnvdsinfer.h"
 // OpenCV
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"

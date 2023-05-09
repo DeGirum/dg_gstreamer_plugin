@@ -96,6 +96,9 @@ static void attach_metadata_full_frame(
 	gdouble scale_ratio,
 	DgAcceleratorOutput *output,
 	guint batch_id );
+static void releaseSegmentationMeta(gpointer data, gpointer user_data);
+static gpointer copySegmentationMeta(gpointer data, gpointer user_data);
+void attachSegmentationMetadata( NvDsFrameMeta* frameMeta, const NvDsInferSegmentationOutput& segmentation_output );
 
 #define GST_TYPE_DGACCELERATOR_BOX_COLOR ( gst_dgaccelerator_box_color_get_type() )
 
@@ -897,7 +900,7 @@ guint batch_id )
 	NvDsBatchMeta *batch_meta = frame_meta->base_meta.batch_meta;
 	NvDsObjectMeta *object_meta = NULL;
 	static gchar font_name[] = "Serif";
-	// Loop to attach each object in DgAcceleratorOutput
+	// Object Detection loop in DgAcceleratorOutput
 	for( gint i = 0; i < output->numObjects; i++ )
 	{
 		DgAcceleratorObject *obj = &output->object[ i ];
@@ -944,7 +947,7 @@ guint batch_id )
 		nvds_add_obj_meta_to_frame( frame_meta, object_meta, NULL );
 		
 	}
-	// Loop to attach each pose in DgAcceleratorOutput
+	// Pose Estimation in DgAcceleratorOutput
 	for (gint j = 0; j < output->numPoses; j++)
 	{
 		DgAcceleratorPose *pose = &output->pose[j];
@@ -1002,7 +1005,105 @@ guint batch_id )
 		}
 		// nvds_add_display_meta_to_frame(frame_meta, dmeta);
 	}
+	// Classification loop in DgAcceleratorOutput
+	for (int i = 0; i < output->k; i++) {
+		DgAcceleratorClassObject *class_obj = &output->classifiedObject[i];
+		object_meta = nvds_acquire_obj_meta_from_pool(batch_meta);
+		NvOSD_TextParams &text_params = object_meta->text_params;
+
+		// Display the label and score as text above the frame
+		text_params.display_text = g_strdup_printf("%s: %.2f", class_obj->label, class_obj->score);
+		text_params.x_offset = 10;
+		text_params.y_offset = 30 + i * 20; // Adjust the y-offset for each label
+		text_params.font_params.font_name = font_name;
+		text_params.font_params.font_size = 11;
+		text_params.font_params.font_color = (NvOSD_ColorParams){1, 1, 1, 1};
+		
+		// Add a dark background behind the text
+		text_params.set_bg_clr = 1;
+		text_params.text_bg_clr = (NvOSD_ColorParams){0, 0, 0, 1}; // Set background color to black
+
+		nvds_add_obj_meta_to_frame(frame_meta, object_meta, NULL);
+	}
+	/*
+	// Segmentation loop in DgAcceleratorOutput
+	for (int i = 0; i < output->numMaps; i++) // most likely only happens once.
+	{
+		DgAcceleratorSegmentation *seg = &output->segMap[i];
+
+		NvDsInferSegmentationOutput segOutput;
+		segOutput.classes = 20;  // fill in with the number of classes supported by the network
+		segOutput.width = seg->mask_width;  // fill in with the width of the segmentation map
+		segOutput.height = seg->mask_height;  // fill in with the height of the segmentation map
+		segOutput.class_map = seg->class_map;
+		segOutput.class_probability_map = NULL;
+
+		// attach the segmentation metadata to the frame
+		attachSegmentationMetadata(NULL, frame_meta, NULL, segOutput);  
+	} */
 	frame_meta->bInferDone = TRUE;
+}
+//////////// SEGMENTATION META FUNCTIONS //////////////////
+static void releaseSegmentationMeta(gpointer data, gpointer user_data) {
+    NvDsUserMeta* user_meta = (NvDsUserMeta*)data;
+    NvDsInferSegmentationMeta* meta =
+        (NvDsInferSegmentationMeta*)user_meta->user_meta_data;
+    if (meta->priv_data) {
+        // delete (dsis::SharedIBatchBuffer*)(meta->priv_data);
+    } else {
+        g_free(meta->class_map);
+        g_free(meta->class_probabilities_map);
+    }
+    delete meta;
+}
+
+static gpointer copySegmentationMeta(gpointer data, gpointer user_data) {
+    NvDsUserMeta* src_user_meta = (NvDsUserMeta*)data;
+    NvDsInferSegmentationMeta* src_meta =
+        (NvDsInferSegmentationMeta*)src_user_meta->user_meta_data;
+    NvDsInferSegmentationMeta* meta =
+        (NvDsInferSegmentationMeta*)g_malloc(sizeof(NvDsInferSegmentationMeta));
+
+    meta->classes = src_meta->classes;
+    meta->width = src_meta->width;
+    meta->height = src_meta->height;
+    meta->class_map = (gint*)g_memdup(
+        src_meta->class_map, meta->width * meta->height * sizeof(gint));
+    meta->class_probabilities_map =
+        (gfloat*)g_memdup(src_meta->class_probabilities_map,
+            meta->classes * meta->width * meta->height * sizeof(gfloat));
+    meta->priv_data = NULL;
+
+    return meta;
+}
+
+void
+attachSegmentationMetadata( NvDsFrameMeta* frameMeta, const NvDsInferSegmentationOutput& segOutput )
+{
+    assert(frameMeta);
+    NvDsBatchMeta* batchMeta = frameMeta->base_meta.batch_meta;
+
+    // MetaLock locker(batchMeta);
+    NvDsUserMeta* user_meta = nvds_acquire_user_meta_from_pool(batchMeta);
+    NvDsInferSegmentationMeta* meta =
+        (NvDsInferSegmentationMeta*)g_malloc(sizeof(NvDsInferSegmentationMeta));
+
+    meta->classes = segOutput.classes;
+    meta->width = segOutput.width;
+    meta->height = segOutput.height;
+    meta->class_map = segOutput.class_map;
+    meta->class_probabilities_map = segOutput.class_probability_map;
+    
+	// meta->priv_data = new dsis::SharedIBatchBuffer(buf);
+
+    user_meta->user_meta_data = meta;
+    user_meta->base_meta.meta_type = (NvDsMetaType)NVDSINFER_SEGMENTATION_META;
+    user_meta->base_meta.release_func = releaseSegmentationMeta;
+    user_meta->base_meta.copy_func = copySegmentationMeta;
+
+	// add the meta to frame
+    assert(frameMeta);
+    nvds_add_user_meta_to_frame(frameMeta, user_meta);
 }
 
 ///
