@@ -1030,23 +1030,24 @@ guint batch_id )
 	}
 	
 	// Segmentation loop in DgAcceleratorOutput
-	for (int i = 0; i < output->numMaps; i++) // most likely only happens once, => remove numMaps entirely
+	for (int i = 0; i < output->numMaps; i++)
 	{
 		// std::cout << "Entered segmentation loop, filling in the segMap of index " << i << "\n";
 		DgAcceleratorSegmentation *seg = &output->segMap[i];
-		if (seg->class_map == nullptr)
+		if (seg->class_map.empty())
 			break;
+
 		// Resize the segmentation map to original frame dimensions
 		// Convert class_map to cv::Mat
-		cv::Mat classMapMat(seg->mask_height, seg->mask_width, CV_32S, seg->class_map);
+		cv::Mat classMapMat(seg->mask_height, seg->mask_width, CV_32S, seg->class_map.data());
 		// Create a new cv::Mat for the resized map
 		cv::Mat resizedClassMapMat;
 		// Resize the class map
 		cv::resize(classMapMat, resizedClassMapMat, cv::Size(FRAME_WIDTH, FRAME_HEIGHT), 0, 0, cv::INTER_NEAREST);
 		// Create a new class map with the resized dimensions
-		int* newClassMap = new int[FRAME_WIDTH * FRAME_HEIGHT];
+		std::vector<int> newClassMap(FRAME_WIDTH * FRAME_HEIGHT);
 		// Copy the resized class map to the new class map
-		std::memcpy(newClassMap, resizedClassMapMat.data, FRAME_WIDTH * FRAME_HEIGHT * sizeof(int));
+		std::memcpy(newClassMap.data(), resizedClassMapMat.data, FRAME_WIDTH * FRAME_HEIGHT * sizeof(int));
 		// Free the mats
 		classMapMat.release();
 		resizedClassMapMat.release();
@@ -1057,14 +1058,15 @@ guint batch_id )
 
 		NvDsInferSegmentationOutput segOutput;
 		segOutput.classes = 20;  // number of classes supported by the network
-		segOutput.class_map = seg->class_map;
+		segOutput.class_map = seg->class_map.data();
 		segOutput.width = seg->mask_width;
 		segOutput.height = seg->mask_height;
-		segOutput.class_probability_map = NULL;
+		segOutput.class_probability_map = nullptr;
 
 		// attach the segmentation metadata to the frame
 		attachSegmentationMetadata(frame_meta, segOutput);
 	}
+
 
 	frame_meta->bInferDone = TRUE;
 }
