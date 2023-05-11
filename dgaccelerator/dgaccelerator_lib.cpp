@@ -293,13 +293,10 @@ void parseOutput(const json &response, const unsigned int &index, std::vector< D
 		// Obtain mask height/width from the json
 		size_t mask_width = response[0]["shape"].get<std::vector<int>>()[1];
 		size_t mask_height = response[0]["shape"].get<std::vector<int>>()[2];
-
 		// Now parse the json into an int array mask
 		const auto &byte_vector = response[0]["data"].get_binary();
-		// Allocate vector
-		std::vector<int> arr(byte_vector.size());
-		// Now copy byte_vector.data() into the int* arr
-		std::copy(byte_vector.begin(), byte_vector.end(), arr.begin());
+		// Allocate vector and copy byte_vector data into the int* arr
+		std::vector<int> arr(byte_vector.begin(), byte_vector.end());
 		// Store the class_map in the DgAcceleratorOutput structure
 		ctx->out[index]->segMap[0] = (DgAcceleratorSegmentation){
                 arr,

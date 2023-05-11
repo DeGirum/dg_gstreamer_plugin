@@ -62,7 +62,7 @@ struct DgAcceleratorClassObject
 struct DgAcceleratorSegmentation
 {
 	// array for 2D pixel class map
-    // pixel (x,y) is at index (y*width+x)
+    // pixel (x,y) is at class_map[y*width+x]
     std::vector<int> class_map;
 	size_t mask_width;
 	size_t mask_height;
