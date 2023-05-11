@@ -795,7 +795,7 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 	NvDsBatchMeta *batch_meta = NULL;
 	NvDsFrameMeta *frame_meta = NULL;
 	NvDsMetaList *l_frame = NULL;
-	guint i = 0;
+	guint i = 0; // frame number in the batch
 
 	dgaccelerator->frame_num++;
 	CHECK_CUDA_STATUS( cudaSetDevice( dgaccelerator->gpu_id ), "Unable to set cuda device" );
@@ -855,7 +855,7 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		// Output is a DgAcceleratorOutput object!
 		output = DgAcceleratorProcess( dgaccelerator->dgacceleratorlib_ctx, dgaccelerator->cvmat->data );
 		
-		// Add a check here to return GST_FLOW_ERROR with the correct error
+		// Add a check here to return GST_FLOW_ERROR with the correct error?
 		// if( error_found )
 		// {
 		// 	GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "error message" ), ( NULL ) );
@@ -1032,10 +1032,9 @@ guint batch_id )
 	// Segmentation loop in DgAcceleratorOutput
 	for (int i = 0; i < output->numMaps; i++)
 	{
-		// std::cout << "Entered segmentation loop, filling in the segMap of index " << i << "\n";
 		DgAcceleratorSegmentation *seg = &output->segMap[i];
 		if (seg->class_map.empty())
-			break;
+			return;
 
 		// Resize the segmentation map to original frame dimensions
 		// Convert class_map to cv::Mat
@@ -1044,95 +1043,146 @@ guint batch_id )
 		cv::Mat resizedClassMapMat;
 		// Resize the class map
 		cv::resize(classMapMat, resizedClassMapMat, cv::Size(FRAME_WIDTH, FRAME_HEIGHT), 0, 0, cv::INTER_NEAREST);
-		// Create a new class map with the resized dimensions
-		std::vector<int> newClassMap(FRAME_WIDTH * FRAME_HEIGHT);
+		// Allocate memory for the new class map
+		int* newClassMap = new int[FRAME_WIDTH * FRAME_HEIGHT];
 		// Copy the resized class map to the new class map
-		std::memcpy(newClassMap.data(), resizedClassMapMat.data, FRAME_WIDTH * FRAME_HEIGHT * sizeof(int));
+		std::memcpy(newClassMap, resizedClassMapMat.data, FRAME_WIDTH * FRAME_HEIGHT * sizeof(int));
 		// Free the mats
 		classMapMat.release();
-		resizedClassMapMat.release();
-		// Overwrite the old class map and dimensions
-		seg->class_map = newClassMap;
-		seg->mask_width = FRAME_WIDTH;
-		seg->mask_height = FRAME_HEIGHT;
 
 		NvDsInferSegmentationOutput segOutput;
-		segOutput.classes = 20;  // number of classes supported by the network
-		segOutput.class_map = seg->class_map.data();
-		segOutput.width = seg->mask_width;
-		segOutput.height = seg->mask_height;
+		segOutput.classes = UINT_MAX;  // number of classes supported by the network
+		segOutput.class_map = newClassMap;  // Assign the heap-allocated array
+		segOutput.width = FRAME_WIDTH;
+		segOutput.height = FRAME_HEIGHT;
 		segOutput.class_probability_map = nullptr;
 
 		// attach the segmentation metadata to the frame
 		attachSegmentationMetadata(frame_meta, segOutput);
 	}
-
-
 	frame_meta->bInferDone = TRUE;
 }
 //////////// SEGMENTATION META FUNCTIONS //////////////////
-static void releaseSegmentationMeta(gpointer data, gpointer user_data) {
-	// std::cout << "entering release func\n";
-    NvDsUserMeta* user_meta = (NvDsUserMeta*)data;
-    NvDsInferSegmentationMeta* meta =
-        (NvDsInferSegmentationMeta*)user_meta->user_meta_data;
-	if (meta->class_map != nullptr){
-		// g_free(meta->class_map);
-	}
-    delete meta;
-}
 
-static gpointer copySegmentationMeta(gpointer data, gpointer user_data) {
-	// std::cout << "entering copy func\n";
-    NvDsUserMeta* src_user_meta = (NvDsUserMeta*)data;
-    NvDsInferSegmentationMeta* src_meta =
-        (NvDsInferSegmentationMeta*)src_user_meta->user_meta_data;
-    NvDsInferSegmentationMeta* meta =
-        (NvDsInferSegmentationMeta*)g_malloc(sizeof(NvDsInferSegmentationMeta));
-
-    meta->classes = src_meta->classes;
-    meta->width = src_meta->width;
-    meta->height = src_meta->height;
-    meta->class_map = (gint*)g_memdup(
-        src_meta->class_map, meta->width * meta->height * sizeof(gint));
-    meta->class_probabilities_map = NULL;
-    meta->priv_data = NULL;
-
-    return meta;
-}
-
-void
-attachSegmentationMetadata( NvDsFrameMeta* frameMeta, const NvDsInferSegmentationOutput& segOutput )
+///
+/// \brief Releases the memory associated with the given segmentation metadata.
+///
+/// This function releases the memory associated with the given segmentation metadata. It first checks if the metadata
+/// is valid and if the class_map and class_probabilities_map pointers are not null. If they are not null, it frees the
+/// memory associated with them using g_free() function. Finally, it deletes the metadata object and sets the user_meta_data
+/// pointer to null.
+///
+/// \param[in] data A gpointer to the user meta data to be released.
+/// \param[in] user_data Unused, but required
+///
+static void releaseSegmentationMeta(gpointer data, gpointer user_data)
 {
-	// std::cout << "entering attach func\n";
-    assert(frameMeta);
-    NvDsBatchMeta* batchMeta = frameMeta->base_meta.batch_meta;
+    if (data == nullptr) {
+        return;
+    }
+    
+    NvDsUserMeta *user_meta = (NvDsUserMeta *)data;
+    NvDsInferSegmentationMeta *meta = (NvDsInferSegmentationMeta *)user_meta->user_meta_data;
 
-    assert(batchMeta);
-    nvds_acquire_meta_lock(batchMeta);
+    if (meta->class_map != nullptr) {
+        std::cout << "Freeing meta->class_map\n";
+        g_free(meta->class_map);
+        meta->class_map = nullptr;
+    }
 
-    NvDsUserMeta* user_meta = nvds_acquire_user_meta_from_pool(batchMeta);
-    NvDsInferSegmentationMeta* meta =
-        (NvDsInferSegmentationMeta*)g_malloc(sizeof(NvDsInferSegmentationMeta));
+    if (meta->class_probabilities_map != nullptr) {
+        std::cout << "Freeing meta->class_probabilities_map\n";
+        g_free(meta->class_probabilities_map);
+        meta->class_probabilities_map = nullptr;
+    }
 
-    meta->classes = segOutput.classes;
-    meta->width = segOutput.width;
-    meta->height = segOutput.height;
-    meta->class_map = segOutput.class_map;
-    meta->class_probabilities_map = segOutput.class_probability_map;
-	meta->priv_data = NULL;
+    g_free(user_meta->user_meta_data);
+    user_meta->user_meta_data = nullptr;
+}
 
-    user_meta->user_meta_data = meta;
-    user_meta->base_meta.meta_type = (NvDsMetaType)NVDSINFER_SEGMENTATION_META;
-    user_meta->base_meta.release_func = releaseSegmentationMeta;
-    user_meta->base_meta.copy_func = copySegmentationMeta;
+
+
+///
+/// \brief Creates a deep copy of the given segmentation metadata.
+///
+/// This function creates a deep copy of the given segmentation metadata. It first checks if the metadata is valid and if
+/// the class_map pointer is not null. If it is not null and the width, height, and classes fields are positive, it creates
+/// a new metadata object and sets its fields to the same values as the source metadata. It then allocates memory for the
+/// class_map using g_memdup() function and copies the data from the source class_map to the new class_map. Finally, it
+/// returns the new metadata object.
+///
+/// \param[in] data A gpointer to the user meta data to be copied.
+/// \param[in] user_data Unused, but required
+/// \return A gpointer to the newly created copy of the user meta data.
+///
+static gpointer copySegmentationMeta( gpointer data, gpointer user_data )
+{
+	std::cout << "entering copy func\n";
+	NvDsUserMeta *src_user_meta = (NvDsUserMeta *)data;
+	NvDsInferSegmentationMeta *src_meta = (NvDsInferSegmentationMeta *)src_user_meta->user_meta_data;
+	NvDsInferSegmentationMeta *meta = (NvDsInferSegmentationMeta *)g_malloc( sizeof( NvDsInferSegmentationMeta ) );
+
+	if (src_meta != nullptr && src_meta->class_map != nullptr &&
+    src_meta->width > 0 && src_meta->height > 0 && src_meta->classes > 0) {
+		// copy the data to meta
+		meta->classes = src_meta->classes;
+		meta->width = src_meta->width;
+		meta->height = src_meta->height;
+		meta->class_map = (gint *)g_memdup(src_meta->class_map, meta->width * meta->height * sizeof(gint));
+		meta->class_probabilities_map = nullptr;
+		meta->priv_data = nullptr;
+	}
+	else
+		std::cout << "src_meta in copy func not valid\n";
+
+	return meta;
+}
+///
+/// \brief Attaches the given segmentation metadata to the given frame metadata.
+///
+/// This function attaches the given segmentation metadata to the given frame metadata. It first checks if the given frame
+/// metadata and batch metadata are valid. It then acquires the metadata lock using nvds_acquire_meta_lock() function. It
+/// acquires a user meta from the pool using nvds_acquire_user_meta_from_pool() function. It then creates a new segmentation
+/// metadata object and sets its fields to the values from the given segOutput. It sets the user meta data pointer to point
+/// to the new metadata object, and sets the base_meta fields accordingly. It then adds the user meta to the frame using
+/// nvds_add_user_meta_to_frame() function. Finally, it releases the metadata lock using nvds_release_meta_lock() function.
+///
+/// \param[in] frameMeta A pointer to the frame metadata to attach the segmentation metadata to.
+/// \param[in] segOutput The segmentation output to create the segmentation metadata from.
+///
+void attachSegmentationMetadata( NvDsFrameMeta *frameMeta, const NvDsInferSegmentationOutput &segOutput )
+{
+	assert( frameMeta );
+	NvDsBatchMeta *batchMeta = frameMeta->base_meta.batch_meta;
+
+	assert( batchMeta );
+	nvds_acquire_meta_lock( batchMeta );
+
+	NvDsUserMeta *user_meta = nvds_acquire_user_meta_from_pool( batchMeta );
+	NvDsInferSegmentationMeta *meta = (NvDsInferSegmentationMeta *)g_malloc( sizeof( NvDsInferSegmentationMeta ) );
+	
+	if (segOutput.classes == 0 || segOutput.width == 0 || segOutput.height == 0 || segOutput.class_map == nullptr)
+    	return;
+
+	meta->classes = segOutput.classes;
+	meta->width = segOutput.width;
+	meta->height = segOutput.height;
+	meta->class_map = segOutput.class_map;
+	meta->class_probabilities_map = nullptr;
+	meta->priv_data = nullptr;
+
+	user_meta->user_meta_data = meta;
+	user_meta->base_meta.meta_type = (NvDsMetaType)NVDSINFER_SEGMENTATION_META;
+	user_meta->base_meta.release_func = releaseSegmentationMeta;
+	user_meta->base_meta.copy_func = copySegmentationMeta;
 
 	// add the meta to frame
-    assert(frameMeta);
-    nvds_add_user_meta_to_frame(frameMeta, user_meta);
+	assert( frameMeta );
+	std::cout << "attaching user meta to frame\n";
+	nvds_add_user_meta_to_frame( frameMeta, user_meta );
 
-	nvds_release_meta_lock(batchMeta);
-} 
+	nvds_release_meta_lock( batchMeta );
+}
 
 ///
 /// \brief Initializes the GstDgAccelerator plugin

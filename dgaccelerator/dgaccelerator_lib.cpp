@@ -289,10 +289,11 @@ void parseOutput(const json &response, const unsigned int &index, std::vector< D
 		// If metadata does not contain needed result, skip
 		if (!response[0].contains("data") || !response[0].contains("size") || !response[0].contains("shape"))
 			return;
-		// Convert the json -> DG::BasicTensor
-		DG::BasicTensor parsed_result(DG::JsonHelper::tensorDeserialize(response[0]));
-		size_t mask_width = parsed_result.shape()[1];
-		size_t mask_height = parsed_result.shape()[2];
+		
+		// Obtain mask height/width from the json
+		size_t mask_width = response[0]["shape"].get<std::vector<int>>()[1];
+		size_t mask_height = response[0]["shape"].get<std::vector<int>>()[2];
+
 		// Now parse the json into an int array mask
 		const auto &byte_vector = response[0]["data"].get_binary();
 		// Allocate vector
