@@ -81,8 +81,7 @@ struct DgAcceleratorOutput
 	int k;
 	DgAcceleratorClassObject classifiedObject[MAX_OBJ_PER_FRAME];
 	// Segmentation Models:
-	int numMaps;
-	DgAcceleratorSegmentation segMap [1];
+	DgAcceleratorSegmentation segMap;
 };
 
 // Initialize library

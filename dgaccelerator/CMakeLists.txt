@@ -3,6 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(dgaccelerator VERSION 0.0.1)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_BUILD_TYPE Debug) # VALGRIND
 
 # Find packages
 find_package(PkgConfig REQUIRED)
@@ -77,6 +78,9 @@ set(SRCS
 
 # Create library target
 add_library(nvdsgst_dgaccelerator SHARED ${SRCS})
+target_compile_options(nvdsgst_dgaccelerator PRIVATE -g) # VALGRIND
+
+
 
 # Set include directories
 target_include_directories(nvdsgst_dgaccelerator PUBLIC
@@ -101,6 +105,21 @@ target_link_libraries(nvdsgst_dgaccelerator
     ${CUDA_LIBRARIES}
     ${CMAKE_DL_LIBS}
 )
+
+find_program(VALGRIND_COMMAND valgrind) # VALGRIND
+
+if (VALGRIND_COMMAND)
+    add_custom_target(valgrind
+        COMMAND ${VALGRIND_COMMAND} --leak-check=full --show-leak-kinds=all gst-launch-1.0 nvurisrcbin uri=file:///opt/nvidia/deepstream/deepstream-6.2/samples/streams/sample_1080p_h264.mp4 ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator processing-width=513 processing-height=513 server_ip=192.168.0.141 model-name=deeplab_seg--513x513_quant_n2x_orca_1 drop-frames=false ! fakesink enable-last-sample=0 num-buffers=1000
+
+ 
+        DEPENDS nvdsgst_dgaccelerator
+        COMMENT "Running Valgrind on nvdsgst_dgaccelerator..."
+    )
+else()
+    message(WARNING "Valgrind not found")
+endif()
+
 
 # Set installation paths
 set(GST_INSTALL_DIR "${NVDS_INSTALL_DIR}/lib/gst-plugins/")

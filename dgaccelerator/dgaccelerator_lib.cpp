@@ -32,34 +32,36 @@
 #include "opencv2/imgproc/imgproc.hpp"
 
 // Degirum
-#include "gstdgaccelerator.h"
-#include "dgaccelerator_lib.h"
 #include "client/dg_client.h"
 #include "dg_file_utilities.h"
 #include "dg_model_api.h"
+#include "dgaccelerator_lib.h"
+#include "gstdgaccelerator.h"
 #include "json.hpp"
 
 using json_ld = nlohmann::basic_json< std::map, std::vector, std::string, bool, std::int64_t, std::uint64_t, long double >;
 
-int NUM_INPUT_STREAMS;                     // Number of input streams
-int RING_BUFFER_SIZE;                      // Size of circular queue of output objects
-int FRAME_DIFF_LIMIT;                      // Maximum number of frames waiting to be processed
+int NUM_INPUT_STREAMS;  // Number of input streams
+int RING_BUFFER_SIZE;   // Size of circular queue of output objects
+int FRAME_DIFF_LIMIT;   // Maximum number of frames waiting to be processed
 
 // parseOutput function declaration
-void parseOutput(const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx);
+void parseOutput( const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx );
 
 // Enum to hold the types of models
-enum ModelType {
+enum ModelType
+{
 	SEGMENTATION,
-    OBJ_DETECTION,
-    POSE_ESTIMATION,
+	OBJ_DETECTION,
+	POSE_ESTIMATION,
 	CLASSIFICATION,
 	ERROR
 };
 
 // ModelType from json function
-ModelType determineModelType(const json &response) {
-    if( !response.is_array() )
+ModelType determineModelType( const json &response )
+{
+	if( !response.is_array() )
 		return ERROR;
 	if( response[ 0 ].contains( "data" ) && response[ 0 ].contains( "size" ) && response[ 0 ].contains( "shape" ) )
 		return SEGMENTATION;
@@ -69,7 +71,6 @@ ModelType determineModelType(const json &response) {
 		return OBJ_DETECTION;
 	return CLASSIFICATION;
 }
-
 
 // Context for the element, holds initParams for the model
 // and a smart pointer to the model
@@ -83,8 +84,8 @@ struct DgAcceleratorCtx
 	// Clock for counting total duration
 	std::chrono::time_point< std::chrono::high_resolution_clock > start_time;
 	// Vector of pointers to output structs, for circular buffer implementation
-	std::vector< DgAcceleratorOutput * > out;  
-	
+	std::vector< DgAcceleratorOutput * > out;
+
 	// Temporary error handling without lastError()
 	bool failed = false;
 	std::string failReason;
@@ -126,10 +127,10 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	std::cout << serverIP << " and name ";
 	std::cout << ctx->initParams.model_name << "\n";
 
-	DG::ModelParamsWriter mparams;  // Model Parameters writer to pass to the model
+	DG::ModelParamsWriter mparams;                       // Model Parameters writer to pass to the model
 
 	if( modelNameStr.find( '/' ) == std::string::npos )  // Check if requesting a local model
-	{	// Validate model name here:
+	{                                                    // Validate model name here:
 		std::vector< DG::ModelInfo > modelList;
 		DG::modelzooListGet( serverIP, modelList );
 		auto model_id = DG::modelFind( serverIP, { modelNameStr } );
@@ -142,25 +143,27 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 			throw std::runtime_error( "Model '" + modelNameStr + "' is not found in model zoo" );
 		}
 		// Validate model width/height here:
-		if ( initParams->processingHeight != model_id.H )
+		if( initParams->processingHeight != model_id.H )
 		{
 			throw std::runtime_error( "Property processing-height does not match model." );
 			return nullptr;
 		}
-		if ( initParams->processingWidth != model_id.W )
+		if( initParams->processingWidth != model_id.W )
 		{
-			throw std::runtime_error( "Property processing-width does not match model.");
+			throw std::runtime_error( "Property processing-width does not match model." );
 			return nullptr;
 		}
 	}
-	else// Cloud model requested, set the token in model params
-	{	// Can't validate cloud model name or cloud token. Happens in PLAYING state
+	else  // Cloud model requested, set the token in model params
+	{     // Can't validate cloud model name or cloud token. Happens in PLAYING state
 		// Instead we at least can check if cloud token is missing
-		if (strlen(initParams->cloud_token) == 0){
-			throw std::runtime_error( "No cloud token provided for the chosen cloud model.");
+		if( strlen( initParams->cloud_token ) == 0 )
+		{
+			throw std::runtime_error( "No cloud token provided for the chosen cloud model." );
 			return nullptr;
 		}
-		else{
+		else
+		{
 			mparams.CloudToken_set( initParams->cloud_token );
 		}
 		// Validation of cloud model existence and width/height match happens in PLAYING state.
@@ -168,25 +171,38 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	// Callback function for parsing the model inference data for a frame
 	auto callback = [ ctx ]( const json &response, const std::string &fr ) {
 		unsigned int index = std::stoi( fr );  // Index of the Output struct to fill
-		// Reset the output structs:
-		std::memset( ctx->out[ index ], 0, sizeof( DgAcceleratorOutput ) );
+		// Deallocate the output struct prior to working on it:
+
+    	// Deallocate memory for Pose Estimation
+    	for (int i = 0; i < ctx->out[ index ]->numPoses; i++) {
+        	ctx->out[ index ]->pose[i].landmarks.clear();  // Deallocate memory for vector of landmarks
+    	}
+    	// Deallocate memory for Segmentation
+    	ctx->out[ index ]->segMap.class_map.clear();  // Deallocate memory for vector of class_map    
+		// Reset values to 0
+		ctx->out[ index ]->numObjects = 0;
+		ctx->out[ index ]->numPoses = 0;
+		ctx->out[ index ]->k = 0;
+		ctx->out[ index ]->segMap.mask_width = 0;
+		ctx->out[ index ]->segMap.mask_height = 0;
+
 		// Check for errors during inference
 		std::string possible_error = DG::errorCheck( response );
-		if( ! possible_error.empty() )
+		if( !possible_error.empty() )
 		{
 			ctx->failed = true;
 			ctx->failReason = possible_error;
 			goto fail;
 		}
 		// Parse the json output, fill output structure using processed output
-		parseOutput(response, index, ctx->out, ctx);
+		parseOutput( response, index, ctx->out, ctx );
 	fail:
 		ctx->framesProcessed++;
 		ctx->diff--;  // Decrement # of frames waiting to be processed
 	};
 
 	// Initialize the model with the parameters. Internal frame queue size set to 48
-	ctx->model.reset( new DG::AIModelAsync( serverIP, modelNameStr, callback, mparams, 48u ) );
+	ctx->model = std::make_unique< DG::AIModelAsync >( serverIP, modelNameStr, callback, mparams, 48u );
 	// runtime error will happen if invalid modelname or server ip is set.
 
 	std::cout << "\nMODEL SUCCESSFULLY INITIALIZED\n\n";
@@ -210,67 +226,68 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 ///
 /// \return void
 ///
-void parseOutput(const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx) {
-	if (response.dump() == "[]")
-		return;		// empty frame: no inference results
+void parseOutput( const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx )
+{
+	if( response.dump() == "[]" )
+		return;  // empty frame: no inference results
 
-    // Check for which model type we are using, based on the json.
-	ModelType type = determineModelType(response);
-	if (type == POSE_ESTIMATION)
+	// Check for which model type we are using, based on the json.
+	ModelType type = determineModelType( response );
+	if( type == POSE_ESTIMATION )
 	{
 		int numPoses = 0;
-		for( const nlohmann::json& pose : response )
+		for( const nlohmann::json &pose : response )
 		{
 			if( !pose.contains( "landmarks" ) || !pose.contains( "score" ) )
 				continue;
-			
-			if (numPoses >= MAX_OBJ_PER_FRAME)
+
+			if( numPoses >= MAX_OBJ_PER_FRAME )
 				break;
 
 			// Iterate over all landmarks in the JSON
-			for( const nlohmann::json& landmark : pose[ "landmarks" ] )
+			for( const nlohmann::json &landmark : pose[ "landmarks" ] )
 			{
 				DgAcceleratorPose::Landmark lm;
 				lm.landmark_class = landmark[ "category_id" ].get< int >();
-				strncpy(lm.label, landmark[ "label" ].get< std::string >().c_str(), DG_MAX_LABEL_SIZE - 1);
-				lm.label[DG_MAX_LABEL_SIZE - 1] = '\0';
+				strncpy( lm.label, landmark[ "label" ].get< std::string >().c_str(), DG_MAX_LABEL_SIZE - 1 );
+				lm.label[ DG_MAX_LABEL_SIZE - 1 ] = '\0';
 				lm.connection = landmark[ "connect" ].get< std::vector< int > >();
-				std::vector< double > point  = landmark[ "landmark" ].get< std::vector< double > >();
+				std::vector< double > point = landmark[ "landmark" ].get< std::vector< double > >();
 				lm.point = { point[ 0 ], point[ 1 ] };
-				ctx->out[index]->pose[numPoses].landmarks.push_back(lm);
+				ctx->out[ index ]->pose[ numPoses ].landmarks.push_back( lm );
 			}
 			numPoses++;
 		}
-		ctx->out[index]->numPoses = numPoses;
+		ctx->out[ index ]->numPoses = numPoses;
 	}
-    else if (type == OBJ_DETECTION)
-    {
-        // Iterate over all of the detected objects
-        for (int i = 0; i < response.size(); i++)
-        {
-			if (ctx->out[index]->numObjects >= MAX_OBJ_PER_FRAME)
-				break;
-            ctx->out[index]->numObjects++;
-            json_ld newresp = response[i]; // Output from model is a json array, so convert to single element
-            std::vector<long double> bbox = newresp["bbox"].get<std::vector<long double>>();
-            std::string label = newresp["label"];
-            int category_id = newresp["category_id"].get<int>();
-            long double score = newresp["score"].get<long double>();
-            ctx->out[index]->object[i] = (DgAcceleratorObject){
-                std::roundf(bbox[0]),                 // left
-                std::roundf(bbox[1]),                 // top
-                std::roundf(bbox[2] - bbox[0]),       // width
-                std::roundf(bbox[3] - bbox[1]),       // height
-                ""                                    // label, must be of type char[]
-            };
-            snprintf(ctx->out[index]->object[i].label, 64, "%s", label.c_str()); // Sets the label
-        }
-    }
-	else if (type == CLASSIFICATION)
+	else if( type == OBJ_DETECTION )
 	{
-		for( const nlohmann::json& object : response )
+		// Iterate over all of the detected objects
+		for( int i = 0; i < response.size(); i++ )
 		{
-			if (ctx->out[index]->k >= MAX_OBJ_PER_FRAME)
+			if( ctx->out[ index ]->numObjects >= MAX_OBJ_PER_FRAME )
+				break;
+			ctx->out[ index ]->numObjects++;
+			json_ld newresp = response[ i ];  // Output from model is a json array, so convert to single element
+			std::vector< long double > bbox = newresp[ "bbox" ].get< std::vector< long double > >();
+			std::string label = newresp[ "label" ];
+			int category_id = newresp[ "category_id" ].get< int >();
+			long double score = newresp[ "score" ].get< long double >();
+			ctx->out[ index ]->object[ i ] = ( DgAcceleratorObject ){
+				std::roundf( bbox[ 0 ] ),                                               // left
+				std::roundf( bbox[ 1 ] ),                                               // top
+				std::roundf( bbox[ 2 ] - bbox[ 0 ] ),                                   // width
+				std::roundf( bbox[ 3 ] - bbox[ 1 ] ),                                   // height
+				""                                                                      // label, must be of type char[]
+			};
+			snprintf( ctx->out[ index ]->object[ i ].label, 64, "%s", label.c_str() );  // Sets the label
+		}
+	}
+	else if( type == CLASSIFICATION )
+	{
+		for( const nlohmann::json &object : response )
+		{
+			if( ctx->out[ index ]->k >= MAX_OBJ_PER_FRAME )
 				break;
 			if( !object.contains( "label" ) )
 				continue;
@@ -278,40 +295,35 @@ void parseOutput(const json &response, const unsigned int &index, std::vector< D
 			double score = object[ "score" ].get< double >();
 			ctx->out[ index ]->classifiedObject[ ctx->out[ index ]->k ] = ( DgAcceleratorClassObject ){
 				score,
-				""      // label, must be of type char[]
+				""                                                                                                   // label, must be of type char[]
 			};
-			snprintf(ctx->out[index]->classifiedObject[ctx->out[index]->k].label, 64, "%s", label.c_str()); // Sets the label
-			ctx->out[index]->k++;
+			snprintf( ctx->out[ index ]->classifiedObject[ ctx->out[ index ]->k ].label, 64, "%s", label.c_str() );  // Sets the label
+			ctx->out[ index ]->k++;
 		}
 	}
-	else if (type == SEGMENTATION)
+	else if( type == SEGMENTATION )
 	{
 		// If metadata does not contain needed result, skip
-		if (!response[0].contains("data") || !response[0].contains("size") || !response[0].contains("shape"))
+		if( !response[ 0 ].contains( "data" ) || !response[ 0 ].contains( "size" ) || !response[ 0 ].contains( "shape" ) )
 			return;
-		
-		// Obtain mask height/width from the json
-		size_t mask_width = response[0]["shape"].get<std::vector<int>>()[1];
-		size_t mask_height = response[0]["shape"].get<std::vector<int>>()[2];
-		// Now parse the json into an int array mask
-		const auto &byte_vector = response[0]["data"].get_binary();
-		// Allocate vector and copy byte_vector data into the int* arr
-		std::vector<int> arr(byte_vector.begin(), byte_vector.end());
-		// Store the class_map in the DgAcceleratorOutput structure
-		ctx->out[index]->segMap[0] = (DgAcceleratorSegmentation){
-                arr,
-                mask_width,
-                mask_height
-        };
-		ctx->out[index]->numMaps = 1;
-	}
-    else if (type == ERROR || strcmp(response.type_name(), "object") == 0)
-    { // Model gave a bad result not caught by errorcheck
-        ctx->failed = true;
-        ctx->failReason = response.dump();
-    }
-}
 
+		// Obtain mask height/width from the json
+		size_t mask_width = response[ 0 ][ "shape" ].get< std::vector< int > >()[ 1 ];
+		size_t mask_height = response[ 0 ][ "shape" ].get< std::vector< int > >()[ 2 ];
+		// Now parse the json into an int array mask
+		const auto &byte_vector = response[ 0 ][ "data" ].get_binary();
+
+		ctx->out[ index ]->segMap.mask_width = mask_width;
+		ctx->out[ index ]->segMap.mask_height = mask_height;
+		ctx->out[ index ]->segMap.class_map.resize( mask_width * mask_height );
+		std::copy( byte_vector.begin(), byte_vector.end(), ctx->out[ index ]->segMap.class_map.begin() );
+	}
+	else if( type == ERROR || strcmp( response.type_name(), "object" ) == 0 )
+	{  // Model gave a bad result not caught by errorcheck
+		ctx->failed = true;
+		ctx->failReason = response.dump();
+	}
+}
 
 ///
 /// \brief Main process function for the DgAccelerator model
@@ -334,9 +346,9 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 	int curFrameIndex = ctx->curIndex++;
 
 	// If an error happens during inference (runtime validation)
-	if ( ctx->failed )
+	if( ctx->failed )
 	{
-		throw std::runtime_error ( ctx->failReason );
+		throw std::runtime_error( ctx->failReason );
 		// DgAcceleratorCtxDeinit (ctx);
 		// GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( ctx->failReason ), ( NULL ) );
 	}
@@ -401,7 +413,6 @@ void DgAcceleratorCtxDeinit( DgAcceleratorCtx *ctx )
 
 	ctx->framesProcessed = 0;
 	ctx->diff = 0;
-	
 
 	// Reset our model
 	ctx->model.reset();

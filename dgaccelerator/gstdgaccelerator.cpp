@@ -96,12 +96,11 @@ static void attach_metadata_full_frame(
 	gdouble scale_ratio,
 	DgAcceleratorOutput *output,
 	guint batch_id );
-static void releaseSegmentationMeta(gpointer data, gpointer user_data);
-static gpointer copySegmentationMeta(gpointer data, gpointer user_data);
-void attachSegmentationMetadata( NvDsFrameMeta* frameMeta, const NvDsInferSegmentationOutput& segmentation_output );
+static void releaseSegmentationMeta( gpointer data, gpointer user_data );
+static gpointer copySegmentationMeta( gpointer data, gpointer user_data );
+void attachSegmentationMetadata( NvDsFrameMeta *frameMeta, guint64 frame_num, int width, int height, const int *class_map );
 
 #define GST_TYPE_DGACCELERATOR_BOX_COLOR ( gst_dgaccelerator_box_color_get_type() )
-
 
 /// \brief Box Color get type function
 /// \return the color of the box
@@ -517,7 +516,7 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 		dgaccelerator->processing_width * 3 );
 	if( !dgaccelerator->cvmat )
 		goto error;
-	
+
 	return TRUE;
 error:
 	if( dgaccelerator->host_rgb_buf )
@@ -532,7 +531,7 @@ error:
 	}
 	if( dgaccelerator->dgacceleratorlib_ctx )
 		DgAcceleratorCtxDeinit( dgaccelerator->dgacceleratorlib_ctx );
-	
+
 	return FALSE;
 }
 
@@ -620,13 +619,13 @@ error:
 /// \return Returns a GstFlowReturn value indicating the status of the function
 ///
 static GstFlowReturn get_converted_mat(
-GstDgAccelerator *dgaccelerator,
-NvBufSurface *input_buf,
-gint idx,
-NvOSD_RectParams *crop_rect_params,
-gdouble &ratio,
-gint input_width,
-gint input_height )
+	GstDgAccelerator *dgaccelerator,
+	NvBufSurface *input_buf,
+	gint idx,
+	NvOSD_RectParams *crop_rect_params,
+	gdouble &ratio,
+	gint input_width,
+	gint input_height )
 {
 	NvBufSurfTransform_Error err;
 	NvBufSurfTransformConfigParams transform_config_params;
@@ -703,7 +702,6 @@ gint input_height )
 
 	// Memset the memory
 	NvBufSurfaceMemSet( dgaccelerator->inter_buf, 0, 0, 0 );
-
 
 	// Transformation scaling+format conversion if any.
 	err = NvBufSurfTransform( &ip_surf, dgaccelerator->inter_buf, &transform_params );
@@ -795,7 +793,7 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 	NvDsBatchMeta *batch_meta = NULL;
 	NvDsFrameMeta *frame_meta = NULL;
 	NvDsMetaList *l_frame = NULL;
-	guint i = 0; // frame number in the batch
+	guint i = 0;  // frame number in the batch
 
 	dgaccelerator->frame_num++;
 	CHECK_CUDA_STATUS( cudaSetDevice( dgaccelerator->gpu_id ), "Unable to set cuda device" );
@@ -823,7 +821,6 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "NvDsBatchMeta not found for input buffer." ), ( NULL ) );
 		return GST_FLOW_ERROR;
 	}
-	
 
 	// sets the scaling parameters for the frame and scales and converts the
 	// frame using the get_converted_mat function
@@ -854,7 +851,7 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		// the metadata for the full frame
 		// Output is a DgAcceleratorOutput object!
 		output = DgAcceleratorProcess( dgaccelerator->dgacceleratorlib_ctx, dgaccelerator->cvmat->data );
-		
+
 		// Add a check here to return GST_FLOW_ERROR with the correct error?
 		// if( error_found )
 		// {
@@ -867,7 +864,7 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		attach_metadata_full_frame( dgaccelerator, frame_meta, scale_ratio, output, i );
 		i++;
 	}
-	
+
 	flow_ret = GST_FLOW_OK;
 
 error:
@@ -891,18 +888,18 @@ error:
 /// \param[in] batch_id The frame number in the batch, unused
 ///
 static void attach_metadata_full_frame(
-GstDgAccelerator *dgaccelerator,
-NvDsFrameMeta *frame_meta,
-gdouble scale_ratio,
-DgAcceleratorOutput *output,
-guint batch_id )
+	GstDgAccelerator *dgaccelerator,
+	NvDsFrameMeta *frame_meta,
+	gdouble scale_ratio,
+	DgAcceleratorOutput *output,
+	guint batch_id )
 {
 	NvDsBatchMeta *batch_meta = frame_meta->base_meta.batch_meta;
 	NvDsObjectMeta *object_meta = NULL;
 	static gchar font_name[] = "Serif";
 	// Set width / height to be the source frame width / height
-	int FRAME_WIDTH = frame_meta->source_frame_width;
-	int FRAME_HEIGHT = frame_meta->source_frame_height;
+	int frame_width = frame_meta->source_frame_width;
+	int frame_height = frame_meta->source_frame_height;
 	// Object Detection loop in DgAcceleratorOutput
 	for( gint i = 0; i < output->numObjects; i++ )
 	{
@@ -950,57 +947,57 @@ guint batch_id )
 		nvds_add_obj_meta_to_frame( frame_meta, object_meta, NULL );
 	}
 	// Pose Estimation in DgAcceleratorOutput
-	for (gint j = 0; j < output->numPoses; j++)
+	for( gint j = 0; j < output->numPoses; j++ )
 	{
-		DgAcceleratorPose *pose = &output->pose[j];
-		NvDsDisplayMeta *dmeta = nvds_acquire_display_meta_from_pool(batch_meta);
-		nvds_add_display_meta_to_frame(frame_meta, dmeta);
+		DgAcceleratorPose *pose = &output->pose[ j ];
+		NvDsDisplayMeta *dmeta = nvds_acquire_display_meta_from_pool( batch_meta );
+		nvds_add_display_meta_to_frame( frame_meta, dmeta );
 
-		for (const auto &landmark : pose->landmarks)
+		for( const auto &landmark : pose->landmarks )
 		{
-			int x = static_cast<int>(landmark.point.first);
-			int y = static_cast<int>(landmark.point.second);
+			int x = static_cast< int >( landmark.point.first );
+			int y = static_cast< int >( landmark.point.second );
 			// scale back
 			x /= scale_ratio;
 			y /= scale_ratio;
-			if (dmeta->num_circles == MAX_ELEMENTS_IN_DISPLAY_META)
+			if( dmeta->num_circles == MAX_ELEMENTS_IN_DISPLAY_META )
 			{
-				dmeta = nvds_acquire_display_meta_from_pool(batch_meta);
-				nvds_add_display_meta_to_frame(frame_meta, dmeta);
+				dmeta = nvds_acquire_display_meta_from_pool( batch_meta );
+				nvds_add_display_meta_to_frame( frame_meta, dmeta );
 			}
 			// Add circle at each landmark
-			NvOSD_CircleParams &cparams = dmeta->circle_params[dmeta->num_circles];
+			NvOSD_CircleParams &cparams = dmeta->circle_params[ dmeta->num_circles ];
 			cparams.xc = x;
 			cparams.yc = y;
 			cparams.radius = 8;
-			cparams.circle_color = NvOSD_ColorParams{0, 255, 0, 1};
+			cparams.circle_color = NvOSD_ColorParams{ 0, 255, 0, 1 };
 			cparams.has_bg_color = 1;
-			cparams.bg_color = NvOSD_ColorParams{200, 0, 40, 1};
+			cparams.bg_color = NvOSD_ColorParams{ 200, 0, 40, 1 };
 			dmeta->num_circles++;
 
 			// Add lines
-			for (int connection_index : landmark.connection)
+			for( int connection_index : landmark.connection )
 			{
-				if (connection_index >= 0 && connection_index < pose->landmarks.size())
+				if( connection_index >= 0 && connection_index < pose->landmarks.size() )
 				{
-					auto &connected_landmark = pose->landmarks[connection_index];
-					int x1 = static_cast<int>(connected_landmark.point.first);
-					int y1 = static_cast<int>(connected_landmark.point.second);
+					auto &connected_landmark = pose->landmarks[ connection_index ];
+					int x1 = static_cast< int >( connected_landmark.point.first );
+					int y1 = static_cast< int >( connected_landmark.point.second );
 					// scale back
 					x1 /= scale_ratio;
 					y1 /= scale_ratio;
-					if (dmeta->num_lines == MAX_ELEMENTS_IN_DISPLAY_META)
+					if( dmeta->num_lines == MAX_ELEMENTS_IN_DISPLAY_META )
 					{
-						dmeta = nvds_acquire_display_meta_from_pool(batch_meta);
-						nvds_add_display_meta_to_frame(frame_meta, dmeta);
+						dmeta = nvds_acquire_display_meta_from_pool( batch_meta );
+						nvds_add_display_meta_to_frame( frame_meta, dmeta );
 					}
-					NvOSD_LineParams &lparams = dmeta->line_params[dmeta->num_lines];
+					NvOSD_LineParams &lparams = dmeta->line_params[ dmeta->num_lines ];
 					lparams.x1 = x;
 					lparams.x2 = x1;
 					lparams.y1 = y;
 					lparams.y2 = y1;
 					lparams.line_width = 3;
-					lparams.line_color = NvOSD_ColorParams{255, 0, 0, 1};
+					lparams.line_color = NvOSD_ColorParams{ 255, 0, 0, 1 };
 					dmeta->num_lines++;
 				}
 			}
@@ -1008,56 +1005,40 @@ guint batch_id )
 		// nvds_add_display_meta_to_frame(frame_meta, dmeta);
 	}
 	// Classification loop in DgAcceleratorOutput
-	for (int i = 0; i < output->k; i++) {
-		DgAcceleratorClassObject *class_obj = &output->classifiedObject[i];
-		object_meta = nvds_acquire_obj_meta_from_pool(batch_meta);
+	for( int i = 0; i < output->k; i++ )
+	{
+		DgAcceleratorClassObject *class_obj = &output->classifiedObject[ i ];
+		object_meta = nvds_acquire_obj_meta_from_pool( batch_meta );
 		NvOSD_TextParams &text_params = object_meta->text_params;
 
 		// Display the label and score as text above the frame
-		text_params.display_text = g_strdup_printf("%s: %.2f", class_obj->label, class_obj->score);
+		text_params.display_text = g_strdup_printf( "%s: %.2f", class_obj->label, class_obj->score );
 		text_params.x_offset = 10;
-		text_params.y_offset = 30 + i * 20; // Adjust the y-offset for each label
+		text_params.y_offset = 30 + i * 20;  // Adjust the y-offset for each label
 		text_params.font_params.font_name = font_name;
 		text_params.font_params.font_size = 11;
-		text_params.font_params.font_color = (NvOSD_ColorParams){1, 1, 1, 1};
-		
+		text_params.font_params.font_color = ( NvOSD_ColorParams ){ 1, 1, 1, 1 };
+
 		// Add a dark background behind the text
 		text_params.set_bg_clr = 1;
-		text_params.text_bg_clr = (NvOSD_ColorParams){0, 0, 0, 1}; // Set background color to black
+		text_params.text_bg_clr = ( NvOSD_ColorParams ){ 0, 0, 0, 1 };  // Set background color to black
 
-		nvds_add_obj_meta_to_frame(frame_meta, object_meta, NULL);
+		nvds_add_obj_meta_to_frame( frame_meta, object_meta, NULL );
 	}
-	
-	// Segmentation loop in DgAcceleratorOutput
-	for (int i = 0; i < output->numMaps; i++)
-	{
-		DgAcceleratorSegmentation *seg = &output->segMap[i];
-		if (seg->class_map.empty())
-			return;
 
+	// Segmentation loop in DgAcceleratorOutput
+	if( !output->segMap.class_map.empty() )
+	{
 		// Resize the segmentation map to original frame dimensions
 		// Convert class_map to cv::Mat
-		cv::Mat classMapMat(seg->mask_height, seg->mask_width, CV_32S, seg->class_map.data());
+		cv::Mat classMapMat( output->segMap.mask_height, output->segMap.mask_width, CV_32S, output->segMap.class_map.data() );
 		// Create a new cv::Mat for the resized map
 		cv::Mat resizedClassMapMat;
 		// Resize the class map
-		cv::resize(classMapMat, resizedClassMapMat, cv::Size(FRAME_WIDTH, FRAME_HEIGHT), 0, 0, cv::INTER_NEAREST);
-
-		std::unique_ptr<int[]> newClassMap = std::make_unique<int[]>(FRAME_WIDTH * FRAME_HEIGHT);
-		std::memcpy(newClassMap.get(), resizedClassMapMat.data, FRAME_WIDTH * FRAME_HEIGHT * sizeof(int));
-
-		// Free the mats
-		classMapMat.release();
-
-		NvDsInferSegmentationOutput segOutput;
-		segOutput.classes = UINT_MAX;  // number of classes supported by the network
-		segOutput.class_map = newClassMap.release();  // Pass raw pointer to segOutput
-		segOutput.width = FRAME_WIDTH;
-		segOutput.height = FRAME_HEIGHT;
-		segOutput.class_probability_map = nullptr;
-
+		cv::resize( classMapMat, resizedClassMapMat, cv::Size( frame_width, frame_height ), 0, 0, cv::INTER_NEAREST );
+		
 		// attach the segmentation metadata to the frame
-		attachSegmentationMetadata(frame_meta, segOutput);
+		attachSegmentationMetadata( frame_meta, dgaccelerator->frame_num, frame_width, frame_height, (const int *)resizedClassMapMat.data );
 	}
 	frame_meta->bInferDone = TRUE;
 }
@@ -1074,31 +1055,32 @@ guint batch_id )
 /// \param[in] data A gpointer to the user meta data to be released.
 /// \param[in] user_data Unused, but required
 ///
-static void releaseSegmentationMeta(gpointer data, gpointer user_data)
+static void releaseSegmentationMeta( gpointer data, gpointer user_data )
 {
-    if (data == nullptr) {
-        return;
-    }
-    
-    NvDsUserMeta *user_meta = (NvDsUserMeta *)data;
-    NvDsInferSegmentationMeta *meta = (NvDsInferSegmentationMeta *)user_meta->user_meta_data;
+	if( data == nullptr )
+		return;
 
-    if (meta->class_map != nullptr) {
-        delete[] meta->class_map;  // Use delete[] to deallocate memory allocated with new[]
-        meta->class_map = nullptr;
-    }
+	NvDsUserMeta *user_meta = (NvDsUserMeta *)data;
+	assert( user_meta != nullptr );
+	assert( user_meta->base_meta.meta_type == NVDSINFER_SEGMENTATION_META );
 
-    if (meta->class_probabilities_map != nullptr) {
-        delete[] meta->class_probabilities_map;
-        meta->class_probabilities_map = nullptr;
-    }
+	NvDsInferSegmentationMeta *segm_meta = (NvDsInferSegmentationMeta *)user_meta->user_meta_data;
+	if( segm_meta != nullptr )
+	{
+		if( segm_meta->class_map != nullptr )
+		{
+			delete[] segm_meta->class_map;  // Use delete[] to deallocate memory allocated with new[]
+			segm_meta->class_map = nullptr;
+		}
 
-    if(user_meta->user_meta_data != nullptr) {
-		NvDsInferSegmentationMeta *metaToDelete = reinterpret_cast<NvDsInferSegmentationMeta*>(user_meta->user_meta_data);
-		delete metaToDelete;
+		if( segm_meta->class_probabilities_map != nullptr )
+		{
+			delete[] segm_meta->class_probabilities_map;
+			segm_meta->class_probabilities_map = nullptr;
+		}
+		delete segm_meta;
 		user_meta->user_meta_data = nullptr;
 	}
-
 }
 ///
 /// \brief Creates a deep copy of the given segmentation metadata.
@@ -1115,26 +1097,39 @@ static void releaseSegmentationMeta(gpointer data, gpointer user_data)
 ///
 static gpointer copySegmentationMeta( gpointer data, gpointer user_data )
 {
-	// std::cout << "entering copy func\n";
-	NvDsUserMeta *src_user_meta = (NvDsUserMeta *)data;
-	NvDsInferSegmentationMeta *src_meta = (NvDsInferSegmentationMeta *)src_user_meta->user_meta_data;
-	
-	auto meta = std::unique_ptr<NvDsInferSegmentationMeta>(static_cast<NvDsInferSegmentationMeta *>(g_malloc(sizeof(NvDsInferSegmentationMeta))));
+	NvDsUserMeta *user_meta = (NvDsUserMeta *)data;
+	assert( user_meta != nullptr );
+	assert( user_meta->base_meta.meta_type == NVDSINFER_SEGMENTATION_META );
 
-	if (src_meta != nullptr && src_meta->class_map != nullptr &&
-    src_meta->width > 0 && src_meta->height > 0 && src_meta->classes > 0) {
-		// copy the data to meta
-		meta->classes = src_meta->classes;
-		meta->width = src_meta->width;
-		meta->height = src_meta->height;
+	NvDsInferSegmentationMeta *segm_meta = (NvDsInferSegmentationMeta *)user_meta->user_meta_data;
+	assert( segm_meta != nullptr );
 
-		meta->class_map = static_cast<gint *>(g_memdup(src_meta->class_map, meta->width * meta->height * sizeof(gint)));
+	NvDsInferSegmentationMeta *ret = new NvDsInferSegmentationMeta();
+	std::memset( ret, 0, sizeof *ret );
 
-		meta->class_probabilities_map = nullptr;
-		meta->priv_data = nullptr;
+	// copy the data to meta
+	ret->unique_id = segm_meta->unique_id;
+	ret->classes = segm_meta->classes;
+	ret->width = segm_meta->width;
+	ret->height = segm_meta->height;
+
+	if( segm_meta->class_map != nullptr )
+	{
+		const size_t class_map_cnt = segm_meta->width * segm_meta->height;
+		ret->class_map = new int[ class_map_cnt ];
+		std::memcpy( ret->class_map, segm_meta->class_map, class_map_cnt * sizeof( int ) );
 	}
-	return meta.release();  // Release ownership, as this memory is managed elsewhere
+
+	if( segm_meta->class_probabilities_map != nullptr )
+	{
+		const size_t prob_map_cnt = segm_meta->classes * segm_meta->width * segm_meta->height;
+		ret->class_probabilities_map = new float[ prob_map_cnt ];
+		std::memcpy( ret->class_probabilities_map, segm_meta->class_probabilities_map, prob_map_cnt * sizeof( float ) );
+	}
+
+	return ret;
 }
+
 ///
 /// \brief Attaches the given segmentation metadata to the given frame metadata.
 ///
@@ -1146,9 +1141,8 @@ static gpointer copySegmentationMeta( gpointer data, gpointer user_data )
 /// nvds_add_user_meta_to_frame() function. Finally, it releases the metadata lock using nvds_release_meta_lock() function.
 ///
 /// \param[in] frameMeta A pointer to the frame metadata to attach the segmentation metadata to.
-/// \param[in] segOutput The segmentation output to create the segmentation metadata from.
 ///
-void attachSegmentationMetadata( NvDsFrameMeta *frameMeta, const NvDsInferSegmentationOutput &segOutput )
+void attachSegmentationMetadata( NvDsFrameMeta *frameMeta, guint64 frame_num, int width, int height, const int *class_map )
 {
 	assert( frameMeta );
 	NvDsBatchMeta *batchMeta = frameMeta->base_meta.batch_meta;
@@ -1157,30 +1151,24 @@ void attachSegmentationMetadata( NvDsFrameMeta *frameMeta, const NvDsInferSegmen
 	nvds_acquire_meta_lock( batchMeta );
 
 	NvDsUserMeta *user_meta = nvds_acquire_user_meta_from_pool( batchMeta );
-	NvDsInferSegmentationMeta *meta = new NvDsInferSegmentationMeta;
-	std::unique_ptr<NvDsInferSegmentationMeta> meta_unique_ptr(meta);
+	NvDsInferSegmentationMeta *segm_meta = new NvDsInferSegmentationMeta();
+	segm_meta->unique_id = frame_num;
+	segm_meta->classes = UINT_MAX;
+	segm_meta->width = width;
+	segm_meta->height = height;
+	segm_meta->class_map = new int[ width * height ];
+	std::memcpy( segm_meta->class_map, class_map, width * height * sizeof( int ) );
+	segm_meta->class_probabilities_map = nullptr;
+	segm_meta->priv_data = nullptr;
 
-	// memory is allocated for a new NvDsInferSegmentationMeta object.
-	
-	if (segOutput.classes == 0 || segOutput.width == 0 || segOutput.height == 0 || segOutput.class_map == nullptr)
-    	return;
+	user_meta->user_meta_data = segm_meta;
 
-	meta->classes = segOutput.classes;
-	meta->width = segOutput.width;
-	meta->height = segOutput.height;
-	meta->class_map = segOutput.class_map;
-	meta->class_probabilities_map = segOutput.class_probability_map;
-	meta->priv_data = nullptr;
-
-	user_meta->user_meta_data = meta_unique_ptr.release();  // Release ownership, as this memory is managed elsewhere
-	
 	user_meta->base_meta.meta_type = (NvDsMetaType)NVDSINFER_SEGMENTATION_META;
 	user_meta->base_meta.release_func = releaseSegmentationMeta;
 	user_meta->base_meta.copy_func = copySegmentationMeta;
 
 	// add the meta to frame
 	assert( frameMeta );
-	// std::cout << "attaching user meta to frame\n";
 	nvds_add_user_meta_to_frame( frameMeta, user_meta );
 
 	nvds_release_meta_lock( batchMeta );
