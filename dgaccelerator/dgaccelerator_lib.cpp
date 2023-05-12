@@ -171,14 +171,15 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	// Callback function for parsing the model inference data for a frame
 	auto callback = [ ctx ]( const json &response, const std::string &fr ) {
 		unsigned int index = std::stoi( fr );  // Index of the Output struct to fill
-		// Deallocate the output struct prior to working on it:
+											   // Deallocate the output struct prior to working on it:
 
-    	// Deallocate memory for Pose Estimation
-    	for (int i = 0; i < ctx->out[ index ]->numPoses; i++) {
-        	ctx->out[ index ]->pose[i].landmarks.clear();  // Deallocate memory for vector of landmarks
-    	}
-    	// Deallocate memory for Segmentation
-    	ctx->out[ index ]->segMap.class_map.clear();  // Deallocate memory for vector of class_map    
+		// Deallocate memory for Pose Estimation
+		for( int i = 0; i < ctx->out[ index ]->numPoses; i++ )
+		{
+			ctx->out[ index ]->pose[ i ].landmarks.clear();  // Deallocate memory for vector of landmarks
+		}
+		// Deallocate memory for Segmentation
+		ctx->out[ index ]->segMap.class_map.clear();  // Deallocate memory for vector of class_map
 		// Reset values to 0
 		ctx->out[ index ]->numObjects = 0;
 		ctx->out[ index ]->numPoses = 0;
@@ -409,7 +410,7 @@ void DgAcceleratorCtxDeinit( DgAcceleratorCtx *ctx )
 	// Calculate FPS
 	auto end_time = std::chrono::high_resolution_clock::now();
 	auto duration = std::chrono::duration_cast< std::chrono::milliseconds >( end_time - ctx->start_time );
-	std::cout << "Frames processed / duration (FPS) :" << 1000 * ( (long double)ctx->framesProcessed / duration.count() );
+	std::cout << "Frames processed / duration (FPS) :" << 1000 * ( (long double)ctx->framesProcessed / duration.count() ) << "\n";
 
 	ctx->framesProcessed = 0;
 	ctx->diff = 0;

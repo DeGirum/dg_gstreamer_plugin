@@ -569,7 +569,7 @@ static gboolean gst_dgaccelerator_stop( GstBaseTransform *btrans )
 	// Deinitialize our library
 	DgAcceleratorCtxDeinit( dgaccelerator->dgacceleratorlib_ctx );
 	dgaccelerator->dgacceleratorlib_ctx = NULL;
-
+	
 	return TRUE;
 }
 
@@ -1036,7 +1036,7 @@ static void attach_metadata_full_frame(
 		cv::Mat resizedClassMapMat;
 		// Resize the class map
 		cv::resize( classMapMat, resizedClassMapMat, cv::Size( frame_width, frame_height ), 0, 0, cv::INTER_NEAREST );
-		
+
 		// attach the segmentation metadata to the frame
 		attachSegmentationMetadata( frame_meta, dgaccelerator->frame_num, frame_width, frame_height, (const int *)resizedClassMapMat.data );
 	}

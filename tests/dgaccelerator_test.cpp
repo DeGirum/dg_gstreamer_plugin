@@ -185,133 +185,169 @@ TEST_F(GStreamerPluginTest, RunTestPipelines) {
 	// 1 : nvidia + gstreamer control check
 	// 2 : dgaccelerator on videotestsrc
 	// 3 : dgaccelerator on mp4 video with box drawing
+	// 4 : dgaccelerator on mp4 video with pose estimation
+	// 5 : dgaccelerator on mp4 video with classification
+	// 6 : dgaccelerator on mp4 video with segmentation
 	const gchar *pipelines[] = {
 		"fakesrc ! fakesink",
 		"videotestsrc ! nvvideoconvert ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! identity ! fakesink enable-last-sample=0",
 		"videotestsrc ! nvvideoconvert ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator processing-width=300 processing-height=300 server_ip=" TEST_SERVER_IP " model-name=mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1 drop-frames=false ! fakesink enable-last-sample=0",
 		"nvurisrcbin uri=file:///opt/nvidia/deepstream/deepstream-6.2/samples/streams/sample_1080p_h264.mp4 ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! dgaccelerator processing-width=300 processing-height=300 server_ip=" TEST_SERVER_IP " model-name=mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1 drop-frames=false ! nvvideoconvert ! nvdsosd ! fakesink enable-last-sample=0",
+		"nvurisrcbin file-loop=true uri=file:///opt/nvidia/deepstream/deepstream-6.2/samples/streams/sample_ride_bike.mov ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator processing-width=481 processing-height=353 server_ip=" TEST_SERVER_IP " model-name=mobilenet_v1_posenet_coco_keypoints--353x481_quant_n2x_orca_1 drop-frames=false ! nvdsosd ! fakesink enable-last-sample=0",
+		"nvurisrcbin file-loop=true uri=file:///opt/nvidia/deepstream/deepstream-6.2/samples/streams/sample_ride_bike.mov ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator processing-width=224 processing-height=224 server_ip=" TEST_SERVER_IP " model-name=resnet50_imagenet--224x224_pruned_quant_n2x_orca_1 drop-frames=false ! nvdsosd ! fakesink enable-last-sample=0",
+		"nvurisrcbin file-loop=true uri=file:///opt/nvidia/deepstream/deepstream-6.2/samples/streams/sample_1080p_h264.mp4 ! videorate drop-only=true max-rate=18 ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator processing-width=513 processing-height=513 server_ip=" TEST_SERVER_IP " model-name=deeplab_seg--513x513_quant_n2x_orca_1 drop-frames=false ! nvsegvisual width=1920 height=1080 ! fakesink enable-last-sample=0",
 		NULL
 	};
 
-	for (gint i = 0; pipelines[i] != NULL; i++) {
-	GError *err = NULL;
-	std::cout << "\n\tTesting pipeline " << i << ": " << pipelines[i] << std::endl;
-	GstElement *pipeline = gst_parse_launch(pipelines[i], &err); 					// Parse and launch the GStreamer pipeline
-	if (!pipeline){
-		std::cerr << "Failed to launch pipeline " << err->message << std::endl; 	// Print the error message
-		g_error_free(err); 															// Free the error variable
-	}
-	ASSERT_TRUE(pipeline != NULL); 													// Assert that the pipeline was launched correctly
-	GstStateChangeReturn ret = gst_element_set_state(pipeline, GST_STATE_PLAYING); 	// Start the pipeline
-	EXPECT_EQ(GST_STATE_CHANGE_ASYNC, ret); 										// Expect that the pipeline state change is asynchronous
-	g_usleep(1 * G_USEC_PER_SEC); 													// Wait for 1 seconds
-	ret = gst_element_set_state(pipeline, GST_STATE_NULL); 							// Stop the pipeline
-	EXPECT_EQ(GST_STATE_CHANGE_SUCCESS, ret); 										// Expect that the pipeline state change is successful
-	gst_object_unref(pipeline); 													// Free the pipeline's resources
+	for( gint i = 0; pipelines[ i ] != NULL; i++ )
+	{
+		GError *err = NULL;
+		std::cout << "\n\tTesting pipeline " << i << ": " << pipelines[ i ] << std::endl;
+		GstElement *pipeline = gst_parse_launch( pipelines[ i ], &err );  // Parse and launch the GStreamer pipeline
+		if( !pipeline )
+		{
+			std::cerr << "Failed to launch pipeline " << err->message << std::endl;       // Print the error message
+			g_error_free( err );                                                          // Free the error variable
+		}
+		ASSERT_TRUE( pipeline != NULL );                                                  // Assert that the pipeline was launched correctly
+		GstStateChangeReturn ret = gst_element_set_state( pipeline, GST_STATE_PLAYING );  // Start the pipeline
+		EXPECT_EQ( GST_STATE_CHANGE_ASYNC, ret );                                         // Expect that the pipeline state change is asynchronous
+		g_usleep( 1 * G_USEC_PER_SEC );                                                   // Wait for 1 seconds
+		ret = gst_element_set_state( pipeline, GST_STATE_NULL );                          // Stop the pipeline
+		EXPECT_EQ( GST_STATE_CHANGE_SUCCESS, ret );                                       // Expect that the pipeline state change is successful
+		gst_object_unref( pipeline );                                                     // Free the pipeline's resources
 	}
 }
 
 // Test the plugin's robustness (invalid/unexpected property input)
-TEST_F(GStreamerPluginTest, Robustness) {
-	GstElement* dgaccelerator = gst_element_factory_make("dgaccelerator", "test_dgaccelerator");
-  	ASSERT_NE(dgaccelerator, nullptr);
+TEST_F( GStreamerPluginTest, Robustness )
+{
+	GstElement *dgaccelerator = gst_element_factory_make( "dgaccelerator", "test_dgaccelerator" );
+	ASSERT_NE( dgaccelerator, nullptr );
 
 	// Test handling of unexpected input format
-	g_object_set(G_OBJECT(dgaccelerator), "processing-width", 512, "processing-height", 512, nullptr);
-	GstCaps* invalid_caps = gst_caps_new_simple("video/x-raw",
-												"format", G_TYPE_STRING, "SOME_INVALID_FORMAT",
-												"width", G_TYPE_INT, 512,
-												"height", G_TYPE_INT, 512,
-												"framerate", GST_TYPE_FRACTION, 30, 1,
-												nullptr);
-	ASSERT_NE(invalid_caps, nullptr);
-	GstPad* sinkpad = gst_element_get_static_pad(dgaccelerator, "sink");
-	ASSERT_NE(sinkpad, nullptr);
-	gboolean link_return = gst_pad_set_caps(sinkpad, invalid_caps);
-	ASSERT_EQ(link_return, 0);
-	gst_caps_unref(invalid_caps);
-	gst_object_unref(sinkpad);
+	g_object_set( G_OBJECT( dgaccelerator ), "processing-width", 512, "processing-height", 512, nullptr );
+	GstCaps *invalid_caps = gst_caps_new_simple(
+		"video/x-raw",
+		"format",
+		G_TYPE_STRING,
+		"SOME_INVALID_FORMAT",
+		"width",
+		G_TYPE_INT,
+		512,
+		"height",
+		G_TYPE_INT,
+		512,
+		"framerate",
+		GST_TYPE_FRACTION,
+		30,
+		1,
+		nullptr );
+	ASSERT_NE( invalid_caps, nullptr );
+	GstPad *sinkpad = gst_element_get_static_pad( dgaccelerator, "sink" );
+	ASSERT_NE( sinkpad, nullptr );
+	gboolean link_return = gst_pad_set_caps( sinkpad, invalid_caps );
+	ASSERT_EQ( link_return, 0 );
+	gst_caps_unref( invalid_caps );
+	gst_object_unref( sinkpad );
 
 	// Test handling of incorrect GPU device ID
-	g_object_set(G_OBJECT(dgaccelerator), "gpu-id", 4294967296, nullptr);
+	g_object_set( G_OBJECT( dgaccelerator ), "gpu-id", 4294967296, nullptr );
 	guint gpu_id;
-	g_object_get(G_OBJECT(dgaccelerator), "gpu-id", &gpu_id, nullptr);
-	ASSERT_NE(gpu_id, 4294967296);
+	g_object_get( G_OBJECT( dgaccelerator ), "gpu-id", &gpu_id, nullptr );
+	ASSERT_NE( gpu_id, 4294967296 );
 
 	// Test handling of incorrect processing width and height
-	g_object_set(G_OBJECT(dgaccelerator), "processing-width", 0, "processing-height", 0, nullptr);
+	g_object_set( G_OBJECT( dgaccelerator ), "processing-width", 0, "processing-height", 0, nullptr );
 	gint processing_width, processing_height;
-	g_object_get(G_OBJECT(dgaccelerator), "processing-width", &processing_width, "processing-height", &processing_height, nullptr);
-	ASSERT_NE(processing_width, 0);
-	ASSERT_NE(processing_height, 0);
+	g_object_get( G_OBJECT( dgaccelerator ), "processing-width", &processing_width, "processing-height", &processing_height, nullptr );
+	ASSERT_NE( processing_width, 0 );
+	ASSERT_NE( processing_height, 0 );
 
-	gst_object_unref(dgaccelerator);
+	gst_object_unref( dgaccelerator );
 }
 
-TEST_F(GStreamerPluginTest, PropertyValidationPipelines){
-
+TEST_F( GStreamerPluginTest, PropertyValidationPipelines )
+{
 	// Test handling of non-existing model name
 	std::cout << "\n------=======Test handling of non-existing model name=======================================------\n";
-	GstElement *pipeline1 = create_dgaccelerator_pipeline("non_existing_model", TEST_SERVER_IP, "", 300, 300);
+	GstElement *pipeline1 = create_dgaccelerator_pipeline( "non_existing_model", TEST_SERVER_IP, "", 300, 300 );
 	EXPECT_THROW(
 		{
-			try {
-				gst_element_set_state(pipeline1, GST_STATE_PLAYING);
-			} catch (const std::runtime_error& e) {
+			try
+			{
+				gst_element_set_state( pipeline1, GST_STATE_PLAYING );
+			}
+			catch( const std::runtime_error &e )
+			{
 				std::cerr << "Caught runtime error: " << e.what() << std::endl;
 				throw;
 			}
-		}, std::runtime_error);
-	gst_object_unref(pipeline1);
+		},
+		std::runtime_error );
+	gst_object_unref( pipeline1 );
 
 	// Test handling of incorrect server IP
 	std::cout << "\n------=======Test handling of incorrect server IP===========================================------\n";
-	GstElement *pipeline2 = create_dgaccelerator_pipeline("mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", "999.999.999.999", "", 300, 300);
+	GstElement *pipeline2 = create_dgaccelerator_pipeline( "mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", "999.999.999.999", "", 300, 300 );
 	EXPECT_THROW(
 		{
-			try {
-				gst_element_set_state(pipeline2, GST_STATE_PLAYING);
-			} catch (const std::runtime_error& e) {
+			try
+			{
+				gst_element_set_state( pipeline2, GST_STATE_PLAYING );
+			}
+			catch( const std::runtime_error &e )
+			{
 				std::cerr << "Caught runtime error: " << e.what() << std::endl;
 				throw;
 			}
-		}, std::runtime_error);
-	gst_object_unref(pipeline2);
+		},
+		std::runtime_error );
+	gst_object_unref( pipeline2 );
 
 	// Test handling of model and processing-width / processing-height mismatch
 	std::cout << "\n------=======Test handling of model and processing-width / processing-height mismatch=======------\n";
-	GstElement *pipeline4 = create_dgaccelerator_pipeline("mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", TEST_SERVER_IP, "", 450, 300);
+	GstElement *pipeline4 = create_dgaccelerator_pipeline( "mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", TEST_SERVER_IP, "", 450, 300 );
 	EXPECT_THROW(
 		{
-			try {
-				gst_element_set_state(pipeline4, GST_STATE_PLAYING);
-			} catch (const std::runtime_error& e) {
+			try
+			{
+				gst_element_set_state( pipeline4, GST_STATE_PLAYING );
+			}
+			catch( const std::runtime_error &e )
+			{
 				std::cerr << "Caught runtime error: " << e.what() << std::endl;
 				throw;
 			}
-		}, std::runtime_error);
-	gst_object_unref(pipeline4);
+		},
+		std::runtime_error );
+	gst_object_unref( pipeline4 );
 
 	// Test handling of empty cloud-token input
 	std::cout << "\n------=======Test handling of empty cloud-token input=====================================------\n";
-	GstElement *pipeline5 = create_dgaccelerator_pipeline("degirum/public/mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", TEST_SERVER_IP, "", 300, 300);
+	GstElement
+		*pipeline5 = create_dgaccelerator_pipeline( "degirum/public/mobilenet_v2_ssd_coco--300x300_quant_n2x_orca_1", TEST_SERVER_IP, "", 300, 300 );
 	EXPECT_THROW(
 		{
-			try {
-				gst_element_set_state(pipeline5, GST_STATE_PLAYING);
-			} catch (const std::runtime_error& e) {
+			try
+			{
+				gst_element_set_state( pipeline5, GST_STATE_PLAYING );
+			}
+			catch( const std::runtime_error &e )
+			{
 				std::cerr << "Caught runtime error: " << e.what() << std::endl;
 				throw;
 			}
-		}, std::runtime_error);
-	gst_object_unref(pipeline5);
-
+		},
+		std::runtime_error );
+	gst_object_unref( pipeline5 );
 }
 
-int main(int argc, char **argv) {
+int main( int argc, char **argv )
+{
 	// Initialize GStreamer
-	gst_init(&argc, &argv);
-	
-	::testing::InitGoogleTest(&argc, argv);
+	gst_init( &argc, &argv );
+
+	::testing::InitGoogleTest( &argc, argv );
 	return RUN_ALL_TESTS();
 }
