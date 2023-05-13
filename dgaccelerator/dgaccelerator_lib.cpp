@@ -39,26 +39,27 @@
 #include "gstdgaccelerator.h"
 #include "json.hpp"
 
+/// \brief long double json
 using json_ld = nlohmann::basic_json< std::map, std::vector, std::string, bool, std::int64_t, std::uint64_t, long double >;
 
-int NUM_INPUT_STREAMS;  // Number of input streams
-int RING_BUFFER_SIZE;   // Size of circular queue of output objects
-int FRAME_DIFF_LIMIT;   // Maximum number of frames waiting to be processed
+int NUM_INPUT_STREAMS;  //!< Number of input streams
+int RING_BUFFER_SIZE;   //!< Size of circular queue of output objects
+int FRAME_DIFF_LIMIT;   //!< Maximum number of frames waiting to be processed
 
 // parseOutput function declaration
 void parseOutput( const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx );
 
-// Enum to hold the types of models
+/// \brief Enum to hold the types of models
 enum ModelType
 {
-	SEGMENTATION,
-	OBJ_DETECTION,
-	POSE_ESTIMATION,
-	CLASSIFICATION,
-	ERROR
+	SEGMENTATION,     //!< Segmentation model type
+	OBJ_DETECTION,    //!< Object detection model type
+	POSE_ESTIMATION,  //!< Pose estimation model type
+	CLASSIFICATION,   //!< Classification model type
+	ERROR             //!< Error model type
 };
 
-// ModelType from json function
+/// \brief ModelType from json function
 ModelType determineModelType( const json &response )
 {
 	if( !response.is_array() )
@@ -72,23 +73,19 @@ ModelType determineModelType( const json &response )
 	return CLASSIFICATION;
 }
 
-// Context for the element, holds initParams for the model
-// and a smart pointer to the model
+/// \brief Context for the element, holds initParams for the model and a smart pointer to the model
 struct DgAcceleratorCtx
 {
-	DgAcceleratorInitParams initParams;
-	std::unique_ptr< DG::AIModelAsync > model;
-	size_t diff = 0;             // Counter for # of frames waiting for callback at any given moment
-	size_t framesProcessed = 0;  // Frame count for FPS calculation, careful with uint overflow.
-	unsigned int curIndex;       // circular buffer index implementation
-	// Clock for counting total duration
-	std::chrono::time_point< std::chrono::high_resolution_clock > start_time;
-	// Vector of pointers to output structs, for circular buffer implementation
-	std::vector< DgAcceleratorOutput * > out;
-
+	DgAcceleratorInitParams initParams;         //!< Initialization parameters for the model
+	std::unique_ptr< DG::AIModelAsync > model;  //!< Smart pointer to the model
+	size_t diff = 0;                            //!< Counter for the number of frames waiting for callback at any given moment
+	size_t framesProcessed = 0;                 //!< Frame count for FPS calculation.
+	unsigned int curIndex;                      //!< Circular buffer index implementation
+	std::chrono::time_point< std::chrono::high_resolution_clock > start_time;  //!< Clock for counting total duration
+	std::vector< DgAcceleratorOutput * > out;  //!< Vector of pointers to output structs for circular buffer implementation
 	// Temporary error handling without lastError()
-	bool failed = false;
-	std::string failReason;
+	bool failed = false;     //!< Flag indicating if an error occurred
+	std::string failReason;  //!< Reason for failure
 };
 
 ///
@@ -108,7 +105,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	// Initialize number of input streams
 	NUM_INPUT_STREAMS = initParams->numInputStreams;
 	// Set the ring buffer size
-	RING_BUFFER_SIZE = 2 * NUM_INPUT_STREAMS;  // 2x the number of input streams works best..
+	RING_BUFFER_SIZE = 2 * NUM_INPUT_STREAMS;  // 2x the number of input streams works best
 	// Set the ceiling for frame skipping
 	FRAME_DIFF_LIMIT = std::max( 3, RING_BUFFER_SIZE - 1 );
 

@@ -34,10 +34,10 @@
 #include "gstdgaccelerator.h"
 #include "nvdefines.h"
 
-GST_DEBUG_CATEGORY_STATIC( gst_dgaccelerator_debug );
-#define GST_CAT_DEFAULT gst_dgaccelerator_debug
-#define USE_EGLIMAGE    1
-static GQuark _dsmeta_quark = 0;
+GST_DEBUG_CATEGORY_STATIC( gst_dgaccelerator_debug );  //!< gstreamer boilerplate
+#define GST_CAT_DEFAULT gst_dgaccelerator_debug        //!< gstreamer boilerplate
+#define USE_EGLIMAGE    1                              //!< use EGL image for Nvidia output
+static GQuark _dsmeta_quark = 0;                       //!< quark definition for Nvidia Metadata
 
 // Enum to identify properties
 enum
@@ -55,34 +55,34 @@ enum
 };
 
 // DEFAULT PROPERTY VALUES
-#define DEFAULT_UNIQUE_ID         15
-#define DEFAULT_PROCESSING_WIDTH  512
-#define DEFAULT_PROCESSING_HEIGHT 512
-#define DEFAULT_GPU_ID            0
-#define DEFAULT_MODEL_NAME        "yolo_v5s_coco--512x512_quant_n2x_orca_1"
-#define DEFAULT_SERVER_IP         "127.0.0.1"
-#define DEFAULT_CLOUD_TOKEN       ""
-#define DEFAULT_DROP_FRAMES       true
-#define DEFAULT_BOX_COLOR         DGACCELERATOR_BOX_COLOR_RED
+#define DEFAULT_UNIQUE_ID         15                                         //!< default unique ID
+#define DEFAULT_PROCESSING_WIDTH  512                                        //!< default processing width
+#define DEFAULT_PROCESSING_HEIGHT 512                                        //!< default processing height
+#define DEFAULT_GPU_ID            0                                          //!< default GPU ID
+#define DEFAULT_MODEL_NAME        "yolo_v5s_coco--512x512_quant_n2x_orca_1"  //!< default model name
+#define DEFAULT_SERVER_IP         "127.0.0.1"                                //!< default server IP
+#define DEFAULT_CLOUD_TOKEN       ""                                         //!< default cloud token
+#define DEFAULT_DROP_FRAMES       true                                       //!< default drop frames
+#define DEFAULT_BOX_COLOR         DGACCELERATOR_BOX_COLOR_RED                //!< default box color
 
-// NVIDIA hardware-allocated memory
-#define GST_CAPS_FEATURE_MEMORY_NVMM "memory:NVMM"
+#define GST_CAPS_FEATURE_MEMORY_NVMM "memory:NVMM"                           //!< NVIDIA hardware-allocated memory
 
-// Templates for sink and source pad
+/// \brief Template for sink pad
 static GstStaticPadTemplate gst_dgaccelerator_sink_template = GST_STATIC_PAD_TEMPLATE(
 	"sink",
 	GST_PAD_SINK,
 	GST_PAD_ALWAYS,
 	GST_STATIC_CAPS( GST_VIDEO_CAPS_MAKE_WITH_FEATURES( GST_CAPS_FEATURE_MEMORY_NVMM, "{ NV12, RGBA, I420 }" ) ) );
 
+/// \brief Template for source pad
 static GstStaticPadTemplate gst_dgaccelerator_src_template = GST_STATIC_PAD_TEMPLATE(
 	"src",
 	GST_PAD_SRC,
 	GST_PAD_ALWAYS,
 	GST_STATIC_CAPS( GST_VIDEO_CAPS_MAKE_WITH_FEATURES( GST_CAPS_FEATURE_MEMORY_NVMM, "{ NV12, RGBA, I420 }" ) ) );
 
-#define gst_dgaccelerator_parent_class parent_class
-G_DEFINE_TYPE( GstDgAccelerator, gst_dgaccelerator, GST_TYPE_BASE_TRANSFORM );
+#define gst_dgaccelerator_parent_class parent_class                             //!< gstreamer parent class boilerplate
+G_DEFINE_TYPE( GstDgAccelerator, gst_dgaccelerator, GST_TYPE_BASE_TRANSFORM );  //!< gstreamer base class boilerplate
 
 static void gst_dgaccelerator_set_property( GObject *object, guint prop_id, const GValue *value, GParamSpec *pspec );
 static void gst_dgaccelerator_get_property( GObject *object, guint prop_id, GValue *value, GParamSpec *pspec );
@@ -99,8 +99,15 @@ static void attach_metadata_full_frame(
 static void releaseSegmentationMeta( gpointer data, gpointer user_data );
 static gpointer copySegmentationMeta( gpointer data, gpointer user_data );
 void attachSegmentationMetadata( NvDsFrameMeta *frameMeta, guint64 frame_num, int width, int height, const int *class_map );
+static GstFlowReturn get_converted_mat_2(
+	GstDgAccelerator *dgaccelerator,
+	NvBufSurface *input_buf,
+	gint idx,
+	NvOSD_RectParams *crop_rect_params,
+	gint input_width,
+	gint input_height );
 
-#define GST_TYPE_DGACCELERATOR_BOX_COLOR ( gst_dgaccelerator_box_color_get_type() )
+#define GST_TYPE_DGACCELERATOR_BOX_COLOR ( gst_dgaccelerator_box_color_get_type() )  //!< box color get type function
 
 /// \brief Box Color get type function
 /// \return the color of the box
@@ -569,7 +576,7 @@ static gboolean gst_dgaccelerator_stop( GstBaseTransform *btrans )
 	// Deinitialize our library
 	DgAcceleratorCtxDeinit( dgaccelerator->dgacceleratorlib_ctx );
 	dgaccelerator->dgacceleratorlib_ctx = NULL;
-	
+
 	return TRUE;
 }
 
@@ -766,6 +773,134 @@ static GstFlowReturn get_converted_mat(
 error:
 	return GST_FLOW_ERROR;
 }
+/// STRETCHING CONVERT MAP FUNCTION
+static GstFlowReturn get_converted_mat_2(
+	GstDgAccelerator *dgaccelerator,
+	NvBufSurface *input_buf,
+	gint idx,
+	NvOSD_RectParams *crop_rect_params,
+	gint input_width,
+	gint input_height )
+{
+	NvBufSurfTransform_Error err;
+	NvBufSurfTransformConfigParams transform_config_params;
+	NvBufSurfTransformParams transform_params;
+	NvBufSurfTransformRect src_rect;
+	NvBufSurfTransformRect dst_rect;
+	NvBufSurface ip_surf;
+	cv::Mat in_mat;
+	ip_surf = *input_buf;
+
+	ip_surf.numFilled = ip_surf.batchSize = 1;
+	ip_surf.surfaceList = &( input_buf->surfaceList[ idx ] );
+
+	gint src_left = GST_ROUND_UP_2( (unsigned int)crop_rect_params->left );
+	gint src_top = GST_ROUND_UP_2( (unsigned int)crop_rect_params->top );
+	gint src_width = GST_ROUND_DOWN_2( (unsigned int)crop_rect_params->width );
+	gint src_height = GST_ROUND_DOWN_2( (unsigned int)crop_rect_params->height );
+
+	// Stretch image to fill the output, don't maintain aspect ratio
+	guint dest_width = dgaccelerator->processing_width;
+	guint dest_height = dgaccelerator->processing_height;
+
+	// Configure transform session parameters for the transformation
+	transform_config_params.compute_mode = NvBufSurfTransformCompute_Default;
+	transform_config_params.gpu_id = dgaccelerator->gpu_id;
+	transform_config_params.cuda_stream = dgaccelerator->cuda_stream;
+
+	// Set the transform session parameters for the conversions executed in this
+	// thread.
+	err = NvBufSurfTransformSetSessionParams( &transform_config_params );
+	if( err != NvBufSurfTransformError_Success )
+	{
+		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "NvBufSurfTransformSetSessionParams failed with error %d", err ), ( NULL ) );
+		goto error;
+	}
+
+	if( ( crop_rect_params->width == 0 ) || ( crop_rect_params->height == 0 ) )
+	{
+		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "%s:crop_rect_params dimensions are zero", __func__ ), ( NULL ) );
+		goto error;
+	}
+
+	// Set the transform ROIs for source and destination
+	src_rect = { (guint)src_top, (guint)src_left, (guint)src_width, (guint)src_height };
+	dst_rect = { 0, 0, (guint)dest_width, (guint)dest_height };
+
+	// Set the transform parameters
+	transform_params.src_rect = &src_rect;
+	transform_params.dst_rect = &dst_rect;
+	transform_params.transform_flag = NVBUFSURF_TRANSFORM_FILTER | NVBUFSURF_TRANSFORM_CROP_SRC | NVBUFSURF_TRANSFORM_CROP_DST;
+	transform_params.transform_filter = NvBufSurfTransformInter_Default;
+
+	// Memset the memory
+	NvBufSurfaceMemSet( dgaccelerator->inter_buf, 0, 0, 0 );
+
+	// Transformation scaling+format conversion if any.
+	err = NvBufSurfTransform( &ip_surf, dgaccelerator->inter_buf, &transform_params );
+	if( err != NvBufSurfTransformError_Success )
+	{
+		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "NvBufSurfTransform failed with error %d while converting buffer", err ), ( NULL ) );
+			goto error;
+	}
+	// Map the buffer so that it can be accessed by CPU
+	if( NvBufSurfaceMap( dgaccelerator->inter_buf, 0, 0, NVBUF_MAP_READ ) != 0 )
+	{
+		goto error;
+	}
+	if( dgaccelerator->inter_buf->memType == NVBUF_MEM_SURFACE_ARRAY )
+	{
+		// Cache the mapped data for CPU access
+		NvBufSurfaceSyncForCpu( dgaccelerator->inter_buf, 0, 0 );
+	}
+
+	// Use OpenCV to remove padding and convert RGBA to BGR.
+	in_mat = cv::Mat(
+		dgaccelerator->processing_height,
+		dgaccelerator->processing_width,
+		CV_8UC4,
+		dgaccelerator->inter_buf->surfaceList[ 0 ].mappedAddr.addr[ 0 ],
+		dgaccelerator->inter_buf->surfaceList[ 0 ].pitch );
+
+	#if( CV_MAJOR_VERSION >= 4 )
+		cv::cvtColor( in_mat, *dgaccelerator->cvmat, cv::COLOR_RGBA2BGR );
+	#else
+		cv::cvtColor( in_mat, *dgaccelerator->cvmat, CV_RGBA2BGR );
+	#endif
+
+		if( NvBufSurfaceUnMap( dgaccelerator->inter_buf, 0, 0 ) )
+		{
+			goto error;
+		}
+
+		if( dgaccelerator->is_integrated )
+		{
+	#ifdef __aarch64__
+			// To use the converted buffer in CUDA, create an EGLImage and then use
+			// CUDA-EGL interop APIs
+			if( USE_EGLIMAGE )
+			{
+				if( NvBufSurfaceMapEglImage( dgaccelerator->inter_buf, 0 ) != 0 )
+				{
+					goto error;
+				}
+
+				// dgaccelerator->inter_buf->surfaceList[0].mappedAddr.eglImage
+				// Use interop APIs cuGraphicsEGLRegisterImage and
+				// cuGraphicsResourceGetMappedEglFrame to access the buffer in CUDA
+
+				// Destroy the EGLImage
+				NvBufSurfaceUnMapEglImage( dgaccelerator->inter_buf, 0 );
+			}
+	#endif
+		}
+		return GST_FLOW_OK;
+
+	error:
+		return GST_FLOW_ERROR;
+}
+
+
 
 ///
 /// \brief Main processing function for the GstDgAccelerator element
@@ -836,12 +971,22 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		rect_params.height = dgaccelerator->video_info.height;
 
 		// Scale and convert the frame
-		if( get_converted_mat(
+		// if( get_converted_mat(
+		// 		dgaccelerator,
+		// 		surface,
+		// 		i,
+		// 		&rect_params,
+		// 		scale_ratio,
+		// 		dgaccelerator->video_info.width,
+		// 		dgaccelerator->video_info.height ) != GST_FLOW_OK )
+		// {
+		// 	goto error;
+		// }
+		if( get_converted_mat_2(
 				dgaccelerator,
 				surface,
 				i,
 				&rect_params,
-				scale_ratio,
 				dgaccelerator->video_info.width,
 				dgaccelerator->video_info.height ) != GST_FLOW_OK )
 		{
@@ -851,15 +996,6 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		// the metadata for the full frame
 		// Output is a DgAcceleratorOutput object!
 		output = DgAcceleratorProcess( dgaccelerator->dgacceleratorlib_ctx, dgaccelerator->cvmat->data );
-
-		// Add a check here to return GST_FLOW_ERROR with the correct error?
-		// if( error_found )
-		// {
-		// 	GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "error message" ), ( NULL ) );
-		// 	flow_ret = GST_FLOW_ERROR;
-		//	goto error;
-		// }
-
 		// Attach the metadata for the full frame
 		attach_metadata_full_frame( dgaccelerator, frame_meta, scale_ratio, output, i );
 		i++;
@@ -900,6 +1036,11 @@ static void attach_metadata_full_frame(
 	// Set width / height to be the source frame width / height
 	int frame_width = frame_meta->source_frame_width;
 	int frame_height = frame_meta->source_frame_height;
+
+    // Calculate the scale factors for width and height
+    gdouble scale_ratio_width = frame_width / (gdouble) dgaccelerator->processing_width; 
+    gdouble scale_ratio_height = frame_height / (gdouble) dgaccelerator->processing_height; 
+
 	// Object Detection loop in DgAcceleratorOutput
 	for( gint i = 0; i < output->numObjects; i++ )
 	{
@@ -908,11 +1049,12 @@ static void attach_metadata_full_frame(
 		NvOSD_RectParams &rect_params = object_meta->rect_params;
 		NvOSD_TextParams &text_params = object_meta->text_params;
 
-		// Assign bounding box coordinates
-		rect_params.left = obj->left;
-		rect_params.top = obj->top;
-		rect_params.width = obj->width;
-		rect_params.height = obj->height;
+		// Assign bounding box coordinates and
+		// Scale the bounding boxes
+		rect_params.left = obj->left * scale_ratio_width;
+		rect_params.top = obj->top * scale_ratio_height;
+		rect_params.width = obj->width * scale_ratio_width;
+		rect_params.height = obj->height * scale_ratio_height;
 
 		// Background color for rectangle, default off
 		rect_params.has_bg_color = 0;
@@ -922,12 +1064,6 @@ static void attach_metadata_full_frame(
 		// Set box color
 		rect_params.border_color = dgaccelerator->color;
 
-		// Scale the bounding boxes proportionally based on how the object/frame was
-		// scaled during input
-		rect_params.left /= scale_ratio;
-		rect_params.top /= scale_ratio;
-		rect_params.width /= scale_ratio;
-		rect_params.height /= scale_ratio;
 
 		object_meta->object_id = UNTRACKED_OBJECT_ID;
 		g_strlcpy( object_meta->obj_label, obj->label, MAX_LABEL_SIZE );
@@ -958,8 +1094,8 @@ static void attach_metadata_full_frame(
 			int x = static_cast< int >( landmark.point.first );
 			int y = static_cast< int >( landmark.point.second );
 			// scale back
-			x /= scale_ratio;
-			y /= scale_ratio;
+			x = static_cast< int >( landmark.point.first * scale_ratio_width );
+			y = static_cast< int >( landmark.point.second * scale_ratio_height );
 			if( dmeta->num_circles == MAX_ELEMENTS_IN_DISPLAY_META )
 			{
 				dmeta = nvds_acquire_display_meta_from_pool( batch_meta );
@@ -984,8 +1120,8 @@ static void attach_metadata_full_frame(
 					int x1 = static_cast< int >( connected_landmark.point.first );
 					int y1 = static_cast< int >( connected_landmark.point.second );
 					// scale back
-					x1 /= scale_ratio;
-					y1 /= scale_ratio;
+					x1 = static_cast< int >( connected_landmark.point.first * scale_ratio_width );
+					y1 = static_cast< int >( connected_landmark.point.second * scale_ratio_height );
 					if( dmeta->num_lines == MAX_ELEMENTS_IN_DISPLAY_META )
 					{
 						dmeta = nvds_acquire_display_meta_from_pool( batch_meta );
@@ -1036,7 +1172,6 @@ static void attach_metadata_full_frame(
 		cv::Mat resizedClassMapMat;
 		// Resize the class map
 		cv::resize( classMapMat, resizedClassMapMat, cv::Size( frame_width, frame_height ), 0, 0, cv::INTER_NEAREST );
-
 		// attach the segmentation metadata to the frame
 		attachSegmentationMetadata( frame_meta, dgaccelerator->frame_num, frame_width, frame_height, (const int *)resizedClassMapMat.data );
 	}
@@ -1131,16 +1266,17 @@ static gpointer copySegmentationMeta( gpointer data, gpointer user_data )
 }
 
 ///
-/// \brief Attaches the given segmentation metadata to the given frame metadata.
+/// \brief Attaches segmentation metadata to a frame.
 ///
-/// This function attaches the given segmentation metadata to the given frame metadata. It first checks if the given frame
-/// metadata and batch metadata are valid. It then acquires the metadata lock using nvds_acquire_meta_lock() function. It
-/// acquires a user meta from the pool using nvds_acquire_user_meta_from_pool() function. It then creates a new segmentation
-/// metadata object and sets its fields to the values from the given segOutput. It sets the user meta data pointer to point
-/// to the new metadata object, and sets the base_meta fields accordingly. It then adds the user meta to the frame using
-/// nvds_add_user_meta_to_frame() function. Finally, it releases the metadata lock using nvds_release_meta_lock() function.
+/// This function attaches segmentation metadata to the given frame. It creates a new NvDsInferSegmentationMeta
+/// object and populates its fields with the provided frame number, width, height, and class map. The class map
+/// is deep-copied from the source array. The user metadata is then assigned to the segmentation metadata object.
 ///
-/// \param[in] frameMeta A pointer to the frame metadata to attach the segmentation metadata to.
+/// \param[in] frameMeta A pointer to the NvDsFrameMeta structure representing the frame.
+/// \param[in] frame_num The frame number to be assigned to the segmentation metadata.
+/// \param[in] width The width of the segmentation metadata.
+/// \param[in] height The height of the segmentation metadata.
+/// \param[in] class_map A pointer to the source array containing class map data.
 ///
 void attachSegmentationMetadata( NvDsFrameMeta *frameMeta, guint64 frame_num, int width, int height, const int *class_map )
 {

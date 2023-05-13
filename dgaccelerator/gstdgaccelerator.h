@@ -81,70 +81,35 @@ typedef enum
 	DGACCELERATOR_BOX_COLOR_BLACK
 } GstDgAcceleratorBoxColor;
 
+/// \brief Structure for the dgaccelerator element
 struct _GstDgAccelerator
 {
-	GstBaseTransform base_trans;
-
-	// Context of the DG model library
-	DgAcceleratorCtx *dgacceleratorlib_ctx;
-
-	// Unique ID of the element
-	guint unique_id;
-
-	// Frame number of the current input buffer
-	guint64 frame_num;
-
-	// CUDA Stream used for allocating the CUDA task
-	cudaStream_t cuda_stream;
-
-	// RBG data in a buffer
-	void *host_rgb_buf;
-
-	// the intermediate buffer surface for converting RGBA->BGR
-	NvBufSurface *inter_buf;
-
-	// OpenCV mat containing RGB data
-	cv::Mat *cvmat;
-
-	// Input video info (resolution, color format, framerate, etc)
-	GstVideoInfo video_info;
-
-	// Resolution at which frames/objects should be processed
-	gint processing_width;
-	gint processing_height;
-
-	// Flag for igpu/dgpu
-	guint is_integrated;
-
-	// Amount of objects processed in single call to algorithm
-	guint batch_size;
-
-	// GPU ID on which we expect to execute the task
-	guint gpu_id;
-
-	// The full name of the model to be used for inference
-	char *model_name;
-
-	// The server ip address to connect to for running inference
-	char *server_ip;
-
-	// The token needed to allow connection to cloud models
-	char *cloud_token;
-
-	// Skip frames toggle
-	bool drop_frames;
-
-	// Box Color for visualization
-	GstDgAcceleratorBoxColor box_color;
-
-	// Box Color converted into a NvOSD_ColorParams (default red)
-	NvOSD_ColorParams color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };
+	GstBaseTransform base_trans;                                    //!< Gstreamer BaseTransform boilerplate
+	DgAcceleratorCtx *dgacceleratorlib_ctx;                         //!< Context of the DG model library
+	guint unique_id;                                                //!< Unique ID of the element
+	guint64 frame_num;                                              //!< Frame number of the current input buffer
+	cudaStream_t cuda_stream;                                       //!< CUDA Stream used for allocating the CUDA task
+	void *host_rgb_buf;                                             //!< RBG data in a buffer
+	NvBufSurface *inter_buf;                                        //!< The intermediate buffer surface for converting RGBA->BGR
+	cv::Mat *cvmat;                                                 //!< OpenCV mat containing RGB data
+	GstVideoInfo video_info;                                        //!< Input video info (resolution, color format, framerate, etc)
+	gint processing_width;                                          //!< Resolution at which frames/objects should be processed
+	gint processing_height;                                         //!< Resolution at which frames/objects should be processed
+	guint is_integrated;                                            //!< Flag for igpu/dgpu
+	guint batch_size;                                               //!< Amount of objects processed in single call to algorithm
+	guint gpu_id;                                                   //!< GPU ID on which we expect to execute the task
+	char *model_name;                                               //!< The full name of the model to be used for inference
+	char *server_ip;                                                //!< The server ip address to connect to for running inference
+	char *cloud_token;                                              //!< The token needed to allow connection to cloud models
+	bool drop_frames;                                               //!< Skip frames toggle
+	GstDgAcceleratorBoxColor box_color;                             //!< Box Color for visualization
+	NvOSD_ColorParams color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };  //!< Box Color converted into a NvOSD_ColorParams (default red)
 };
 
-// Boilerplate
+/// \brief GStreamer boilerplate structure
 struct _GstDgAcceleratorClass
 {
-	GstBaseTransformClass parent_class;
+	GstBaseTransformClass parent_class;  //!< gstreamer boilerplate
 };
 
 GType gst_dgaccelerator_get_type( void );
