@@ -1,12 +1,12 @@
 # dg_gstreamer_plugin
 This is the repository for the DeGirum GStreamer Plugin.
-Compatible with NVIDIA DeepStream pipelines, it is capable of running AI inferences using DeGirum Orca&trade; AI hardware accelerator on upstream buffers 
+Compatible with NVIDIA DeepStream pipelines, it is capable of running AI inference using DeGirum Orca&trade; AI hardware accelerator on upstream buffers 
 and outputting NVIDIA metadata for use by downstream elements. 
 
 The element takes in a decoded video stream, performs AI inference on each frame, and adds AI inference results as metadata. Downstream elements in the 
 pipeline can process this metadata using standard methods from NVIDIA DeepStream's element library, such as displaying results on screen or sending data to a server.
 
-For more information on NVIDIA's DeepStream SDK and elements to be used in conjunction with this plugin refere to [DeepStream Plugin Guide].
+For more information on NVIDIA's DeepStream SDK and elements to be used in conjunction with this plugin refer to [DeepStream Plugin Guide].
 
 ## Table of Contents
 - [Example pipelines to show the plugin in action](#example-pipelines-to-show-the-plugin-in-action)
@@ -19,8 +19,12 @@ For more information on NVIDIA's DeepStream SDK and elements to be used in conju
   - [Inference and visualization using a cloud model](#7-inference-and-visualization-using-a-cloud-model)
   - [Inference without visualization (model benchmark) example](#8-inference-without-visualization-model-benchmark-example)
   - [Inference and visualization with tracking](#9-inference-and-visualization-with-tracking)
+  - [Inference and visualization of Pose Estimation](#10-inference-and-visualization-of-pose-estimation)
+  - [Inference and visualization of Classification](#11-inference-and-visualization-of-classification)
+  - [Inference and visualization of Segmentation](#12-inference-and-visualization-of-segmentation)
 - [Plugin Properties](#plugin-properties)
 - [Installation](#dependencies)
+
 
 
 ***
@@ -108,6 +112,25 @@ gst-launch-1.0 nvurisrcbin uri=file://<video-file-location> ! m.sink_0 nvstreamm
 Here, this pipeline uses a default ```nvtracker``` configuration. It can be configured by modifying the properties ```ll-config-file``` and ```ll-lib-file``` in nvtracker.
 ***
 
+## 10. Inference and visualization of Pose Estimation
+```sh
+gst-launch-1.0 nvurisrcbin uri=file://<video-file-location> ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator processing-width=<width> processing-height=<height> server_ip=<server-ip> model-name=<model-name> drop-frames=false ! nvdsosd ! queue ! nvegltransform ! nveglglessink enable-last-sample=0
+```
+![1videoPoseEstimation](https://github.com/DeGirum/dg_gstreamer_plugin/assets/126506976/af36d1df-020d-46ad-b1ae-4b25e433a2f1)
+
+## 11. Inference and visualization of Classification
+```sh
+gst-launch-1.0 nvurisrcbin uri=file://<video-file-location> ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator processing-width=<width> processing-height=<height> server_ip=<server-ip> model-name=<model-name> drop-frames=false ! nvdsosd ! queue ! nvegltransform ! nveglglessink enable-last-sample=0
+```
+![1videoClassification](https://github.com/DeGirum/dg_gstreamer_plugin/assets/126506976/88de1d33-7e01-42e0-88de-1a8d452f2213)
+
+## 12. Inference and visualization of Segmentation
+```sh
+gst-launch-1.0 nvurisrcbin file-loop=true uri=file://<video-file-location> ! videorate drop-only=true max-rate=24 ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator processing-width=<width> processing-height=<height> server_ip=<server-ip> model-name=<model-name> drop-frames=false ! nvsegvisual width=1920 height=1080 ! queue ! nvegltransform ! nveglglessink enable-last-sample=0
+```
+![1videoSegmentation](https://github.com/DeGirum/dg_gstreamer_plugin/assets/126506976/f3d0992e-c040-47d5-8227-ee728acebf91)
+For Segmentation models, it is helpful to cap the framerate of the incoming video to match the model speed using the ```videorate``` element.
+
 # Plugin Properties
 
 The DgAccelerator element has several parameters than can be set to configure inference.
@@ -138,7 +161,7 @@ This plugin requires a [DeepStream installation], a [GStreamer installation], an
 | ------ | ------ |
 | DeepStream | 6.2+ |
 | GStreamer | 1.16.3+ |
-| OpenCV | 4+ |
+| OpenCV | 4.2+ |
 
 
 **Installation Steps:**
@@ -199,4 +222,4 @@ Now, GStreamer pipelines have access to the element ```dgaccelerator``` for acce
 [DeepStream Plugin Guide]:<https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_plugin_Intro.html>
 [DeepStream installation]:<https://docs.nvidia.com/metropolis/deepstream/dev-guide/text/DS_Quickstart.html>
 [GStreamer installation]:<https://gstreamer.freedesktop.org/documentation/installing/index.html>
-[OpenCV installation]:<https://docs.opencv.org/4.x/d7/d9f/tutorial_linux_install.html>
+[OpenCV installation]:<https://github.com/DeGirum/dg_gstreamer_plugin/assets/126506976/acfb55c2-eb85-4552-9a6f-ef7af7352e0b>

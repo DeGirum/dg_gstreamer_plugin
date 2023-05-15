@@ -25,7 +25,6 @@
 ///  This software contains source code provided by NVIDIA Corporation.
 ///
 
-
 #define CHECK_NVDS_MEMORY_AND_GPUID( object, surface )                                                                                           \
 	( {                                                                                                                                          \
 		int _errtype = 0;                                                                                                                        \
@@ -44,7 +43,7 @@
 			}                                                                                                                                    \
 		} while( 0 );                                                                                                                            \
 		_errtype;                                                                                                                                \
-	} ) //!< Check memory and gpu prior to using CUDA - Nvidia 
+	} )  //!< Check memory and gpu prior to using CUDA - Nvidia
 #define CHECK_NPP_STATUS( npp_status, error_str )                                                               \
 	do                                                                                                          \
 	{                                                                                                           \
@@ -53,7 +52,7 @@
 			g_print( "Error: %s in %s at line %d: NPP Error %d\n", error_str, __FILE__, __LINE__, npp_status ); \
 			goto error;                                                                                         \
 		}                                                                                                       \
-	} while( 0 ) //!< Check NPP Status - Nvidia 
+	} while( 0 )  //!< Check NPP Status - Nvidia
 
 #define CHECK_CUDA_STATUS( cuda_status, error_str )                                                                         \
 	do                                                                                                                      \
@@ -63,6 +62,4 @@
 			g_print( "Error: %s in %s at line %d (%s)\n", error_str, __FILE__, __LINE__, cudaGetErrorName( cuda_status ) ); \
 			goto error;                                                                                                     \
 		}                                                                                                                   \
-	} while( 0 ) //!< Check CUDA - Nvidia 
-
-	
+	} while( 0 )  //!< Check CUDA - Nvidia

@@ -160,4 +160,3 @@ include(GoogleTest)
 gtest_discover_tests(run_tests)
 # installs the ./run_tests executable
 install(TARGETS run_tests DESTINATION ${CMAKE_BINARY_DIR})
-# gtest_add_tests(TARGET run_tests)
