@@ -34,10 +34,10 @@
 #include "gstdgaccelerator.h"
 #include "nvdefines.h"
 
-GST_DEBUG_CATEGORY_STATIC( gst_dgaccelerator_debug );
-#define GST_CAT_DEFAULT gst_dgaccelerator_debug
-#define USE_EGLIMAGE    1
-static GQuark _dsmeta_quark = 0;
+GST_DEBUG_CATEGORY_STATIC( gst_dgaccelerator_debug );  //!< gstreamer boilerplate
+#define GST_CAT_DEFAULT gst_dgaccelerator_debug        //!< gstreamer boilerplate
+#define USE_EGLIMAGE    1                              //!< use EGL image for Nvidia output
+static GQuark _dsmeta_quark = 0;                       //!< quark definition for Nvidia Metadata
 
 // Enum to identify properties
 enum
@@ -55,34 +55,34 @@ enum
 };
 
 // DEFAULT PROPERTY VALUES
-#define DEFAULT_UNIQUE_ID         15
-#define DEFAULT_PROCESSING_WIDTH  512
-#define DEFAULT_PROCESSING_HEIGHT 512
-#define DEFAULT_GPU_ID            0
-#define DEFAULT_MODEL_NAME        "yolo_v5s_coco--512x512_quant_n2x_orca_1"
-#define DEFAULT_SERVER_IP         "100.122.112.76"
-#define DEFAULT_CLOUD_TOKEN       ""
-#define DEFAULT_DROP_FRAMES       true
-#define DEFAULT_BOX_COLOR         DGACCELERATOR_BOX_COLOR_RED
+#define DEFAULT_UNIQUE_ID         15                                         //!< default unique ID
+#define DEFAULT_PROCESSING_WIDTH  512                                        //!< default processing width
+#define DEFAULT_PROCESSING_HEIGHT 512                                        //!< default processing height
+#define DEFAULT_GPU_ID            0                                          //!< default GPU ID
+#define DEFAULT_MODEL_NAME        "yolo_v5s_coco--512x512_quant_n2x_orca_1"  //!< default model name
+#define DEFAULT_SERVER_IP         "127.0.0.1"                                //!< default server IP
+#define DEFAULT_CLOUD_TOKEN       ""                                         //!< default cloud token
+#define DEFAULT_DROP_FRAMES       true                                       //!< default drop frames
+#define DEFAULT_BOX_COLOR         DGACCELERATOR_BOX_COLOR_RED                //!< default box color
 
-// NVIDIA hardware-allocated memory
-#define GST_CAPS_FEATURE_MEMORY_NVMM "memory:NVMM"
+#define GST_CAPS_FEATURE_MEMORY_NVMM "memory:NVMM"                           //!< NVIDIA hardware-allocated memory
 
-// Templates for sink and source pad
+/// \brief Template for sink pad
 static GstStaticPadTemplate gst_dgaccelerator_sink_template = GST_STATIC_PAD_TEMPLATE(
 	"sink",
 	GST_PAD_SINK,
 	GST_PAD_ALWAYS,
 	GST_STATIC_CAPS( GST_VIDEO_CAPS_MAKE_WITH_FEATURES( GST_CAPS_FEATURE_MEMORY_NVMM, "{ NV12, RGBA, I420 }" ) ) );
 
+/// \brief Template for source pad
 static GstStaticPadTemplate gst_dgaccelerator_src_template = GST_STATIC_PAD_TEMPLATE(
 	"src",
 	GST_PAD_SRC,
 	GST_PAD_ALWAYS,
 	GST_STATIC_CAPS( GST_VIDEO_CAPS_MAKE_WITH_FEATURES( GST_CAPS_FEATURE_MEMORY_NVMM, "{ NV12, RGBA, I420 }" ) ) );
 
-#define gst_dgaccelerator_parent_class parent_class
-G_DEFINE_TYPE( GstDgAccelerator, gst_dgaccelerator, GST_TYPE_BASE_TRANSFORM );
+#define gst_dgaccelerator_parent_class parent_class                             //!< gstreamer parent class boilerplate
+G_DEFINE_TYPE( GstDgAccelerator, gst_dgaccelerator, GST_TYPE_BASE_TRANSFORM );  //!< gstreamer base class boilerplate
 
 static void gst_dgaccelerator_set_property( GObject *object, guint prop_id, const GValue *value, GParamSpec *pspec );
 static void gst_dgaccelerator_get_property( GObject *object, guint prop_id, GValue *value, GParamSpec *pspec );
@@ -96,9 +96,18 @@ static void attach_metadata_full_frame(
 	gdouble scale_ratio,
 	DgAcceleratorOutput *output,
 	guint batch_id );
+static void releaseSegmentationMeta( gpointer data, gpointer user_data );
+static gpointer copySegmentationMeta( gpointer data, gpointer user_data );
+void attachSegmentationMetadata( NvDsFrameMeta *frameMeta, guint64 frame_num, int width, int height, const int *class_map );
+static GstFlowReturn get_converted_mat_2(
+	GstDgAccelerator *dgaccelerator,
+	NvBufSurface *input_buf,
+	gint idx,
+	NvOSD_RectParams *crop_rect_params,
+	gint input_width,
+	gint input_height );
 
-#define GST_TYPE_DGACCELERATOR_BOX_COLOR ( gst_dgaccelerator_box_color_get_type() )
-
+#define GST_TYPE_DGACCELERATOR_BOX_COLOR ( gst_dgaccelerator_box_color_get_type() )  //!< box color get type function
 
 /// \brief Box Color get type function
 /// \return the color of the box
@@ -265,6 +274,7 @@ static void gst_dgaccelerator_init( GstDgAccelerator *dgaccelerator )
 	dgaccelerator->gpu_id = DEFAULT_GPU_ID;
 	dgaccelerator->model_name = const_cast< char * >( DEFAULT_MODEL_NAME );
 	dgaccelerator->server_ip = const_cast< char * >( DEFAULT_SERVER_IP );
+	dgaccelerator->cloud_token = const_cast< char * >( DEFAULT_CLOUD_TOKEN );
 	dgaccelerator->box_color = DEFAULT_BOX_COLOR;
 	dgaccelerator->drop_frames = DEFAULT_DROP_FRAMES;
 
@@ -410,7 +420,7 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 	GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR( btrans );
 	// NvBufSurface params for buffer creation
 	NvBufSurfaceCreateParams create_params;
-
+	// Creates the init params for our context
 	DgAcceleratorInitParams init_params =
 		{ dgaccelerator->processing_width, dgaccelerator->processing_height, "", "", 0, "", dgaccelerator->drop_frames };
 	snprintf( init_params.model_name, 128, "%s", dgaccelerator->model_name );    // Sets the model name
@@ -439,6 +449,7 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 	init_params.numInputStreams = batch_size;  // Sets the number of input streams
 	gst_query_unref( queryparams );
 
+	// Initialize our context with the init params structure
 	dgaccelerator->dgacceleratorlib_ctx = DgAcceleratorCtxInit( &init_params );
 
 	CHECK_CUDA_STATUS( cudaStreamCreate( &dgaccelerator->cuda_stream ), "Could not create cuda stream" );
@@ -447,6 +458,7 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 	if( dgaccelerator->inter_buf )
 		NvBufSurfaceDestroy( dgaccelerator->inter_buf );
 	dgaccelerator->inter_buf = NULL;
+
 	// handle box color for drawing
 	switch( dgaccelerator->box_color )
 	{
@@ -511,7 +523,7 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 		dgaccelerator->processing_width * 3 );
 	if( !dgaccelerator->cvmat )
 		goto error;
-	
+
 	return TRUE;
 error:
 	if( dgaccelerator->host_rgb_buf )
@@ -526,7 +538,7 @@ error:
 	}
 	if( dgaccelerator->dgacceleratorlib_ctx )
 		DgAcceleratorCtxDeinit( dgaccelerator->dgacceleratorlib_ctx );
-	
+
 	return FALSE;
 }
 
@@ -614,13 +626,13 @@ error:
 /// \return Returns a GstFlowReturn value indicating the status of the function
 ///
 static GstFlowReturn get_converted_mat(
-GstDgAccelerator *dgaccelerator,
-NvBufSurface *input_buf,
-gint idx,
-NvOSD_RectParams *crop_rect_params,
-gdouble &ratio,
-gint input_width,
-gint input_height )
+	GstDgAccelerator *dgaccelerator,
+	NvBufSurface *input_buf,
+	gint idx,
+	NvOSD_RectParams *crop_rect_params,
+	gdouble &ratio,
+	gint input_width,
+	gint input_height )
 {
 	NvBufSurfTransform_Error err;
 	NvBufSurfTransformConfigParams transform_config_params;
@@ -698,7 +710,6 @@ gint input_height )
 	// Memset the memory
 	NvBufSurfaceMemSet( dgaccelerator->inter_buf, 0, 0, 0 );
 
-
 	// Transformation scaling+format conversion if any.
 	err = NvBufSurfTransform( &ip_surf, dgaccelerator->inter_buf, &transform_params );
 	if( err != NvBufSurfTransformError_Success )
@@ -762,6 +773,134 @@ gint input_height )
 error:
 	return GST_FLOW_ERROR;
 }
+/// STRETCHING CONVERT MAP FUNCTION
+static GstFlowReturn get_converted_mat_2(
+	GstDgAccelerator *dgaccelerator,
+	NvBufSurface *input_buf,
+	gint idx,
+	NvOSD_RectParams *crop_rect_params,
+	gint input_width,
+	gint input_height )
+{
+	NvBufSurfTransform_Error err;
+	NvBufSurfTransformConfigParams transform_config_params;
+	NvBufSurfTransformParams transform_params;
+	NvBufSurfTransformRect src_rect;
+	NvBufSurfTransformRect dst_rect;
+	NvBufSurface ip_surf;
+	cv::Mat in_mat;
+	ip_surf = *input_buf;
+
+	ip_surf.numFilled = ip_surf.batchSize = 1;
+	ip_surf.surfaceList = &( input_buf->surfaceList[ idx ] );
+
+	gint src_left = GST_ROUND_UP_2( (unsigned int)crop_rect_params->left );
+	gint src_top = GST_ROUND_UP_2( (unsigned int)crop_rect_params->top );
+	gint src_width = GST_ROUND_DOWN_2( (unsigned int)crop_rect_params->width );
+	gint src_height = GST_ROUND_DOWN_2( (unsigned int)crop_rect_params->height );
+
+	// Stretch image to fill the output, don't maintain aspect ratio
+	guint dest_width = dgaccelerator->processing_width;
+	guint dest_height = dgaccelerator->processing_height;
+
+	// Configure transform session parameters for the transformation
+	transform_config_params.compute_mode = NvBufSurfTransformCompute_Default;
+	transform_config_params.gpu_id = dgaccelerator->gpu_id;
+	transform_config_params.cuda_stream = dgaccelerator->cuda_stream;
+
+	// Set the transform session parameters for the conversions executed in this
+	// thread.
+	err = NvBufSurfTransformSetSessionParams( &transform_config_params );
+	if( err != NvBufSurfTransformError_Success )
+	{
+		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "NvBufSurfTransformSetSessionParams failed with error %d", err ), ( NULL ) );
+		goto error;
+	}
+
+	if( ( crop_rect_params->width == 0 ) || ( crop_rect_params->height == 0 ) )
+	{
+		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "%s:crop_rect_params dimensions are zero", __func__ ), ( NULL ) );
+		goto error;
+	}
+
+	// Set the transform ROIs for source and destination
+	src_rect = { (guint)src_top, (guint)src_left, (guint)src_width, (guint)src_height };
+	dst_rect = { 0, 0, (guint)dest_width, (guint)dest_height };
+
+	// Set the transform parameters
+	transform_params.src_rect = &src_rect;
+	transform_params.dst_rect = &dst_rect;
+	transform_params.transform_flag = NVBUFSURF_TRANSFORM_FILTER | NVBUFSURF_TRANSFORM_CROP_SRC | NVBUFSURF_TRANSFORM_CROP_DST;
+	transform_params.transform_filter = NvBufSurfTransformInter_Default;
+
+	// Memset the memory
+	NvBufSurfaceMemSet( dgaccelerator->inter_buf, 0, 0, 0 );
+
+	// Transformation scaling+format conversion if any.
+	err = NvBufSurfTransform( &ip_surf, dgaccelerator->inter_buf, &transform_params );
+	if( err != NvBufSurfTransformError_Success )
+	{
+		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "NvBufSurfTransform failed with error %d while converting buffer", err ), ( NULL ) );
+			goto error;
+	}
+	// Map the buffer so that it can be accessed by CPU
+	if( NvBufSurfaceMap( dgaccelerator->inter_buf, 0, 0, NVBUF_MAP_READ ) != 0 )
+	{
+		goto error;
+	}
+	if( dgaccelerator->inter_buf->memType == NVBUF_MEM_SURFACE_ARRAY )
+	{
+		// Cache the mapped data for CPU access
+		NvBufSurfaceSyncForCpu( dgaccelerator->inter_buf, 0, 0 );
+	}
+
+	// Use OpenCV to remove padding and convert RGBA to BGR.
+	in_mat = cv::Mat(
+		dgaccelerator->processing_height,
+		dgaccelerator->processing_width,
+		CV_8UC4,
+		dgaccelerator->inter_buf->surfaceList[ 0 ].mappedAddr.addr[ 0 ],
+		dgaccelerator->inter_buf->surfaceList[ 0 ].pitch );
+
+	#if( CV_MAJOR_VERSION >= 4 )
+		cv::cvtColor( in_mat, *dgaccelerator->cvmat, cv::COLOR_RGBA2BGR );
+	#else
+		cv::cvtColor( in_mat, *dgaccelerator->cvmat, CV_RGBA2BGR );
+	#endif
+
+		if( NvBufSurfaceUnMap( dgaccelerator->inter_buf, 0, 0 ) )
+		{
+			goto error;
+		}
+
+		if( dgaccelerator->is_integrated )
+		{
+	#ifdef __aarch64__
+			// To use the converted buffer in CUDA, create an EGLImage and then use
+			// CUDA-EGL interop APIs
+			if( USE_EGLIMAGE )
+			{
+				if( NvBufSurfaceMapEglImage( dgaccelerator->inter_buf, 0 ) != 0 )
+				{
+					goto error;
+				}
+
+				// dgaccelerator->inter_buf->surfaceList[0].mappedAddr.eglImage
+				// Use interop APIs cuGraphicsEGLRegisterImage and
+				// cuGraphicsResourceGetMappedEglFrame to access the buffer in CUDA
+
+				// Destroy the EGLImage
+				NvBufSurfaceUnMapEglImage( dgaccelerator->inter_buf, 0 );
+			}
+	#endif
+		}
+		return GST_FLOW_OK;
+
+	error:
+		return GST_FLOW_ERROR;
+}
+
+
 
 ///
 /// \brief Main processing function for the GstDgAccelerator element
@@ -789,7 +928,7 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 	NvDsBatchMeta *batch_meta = NULL;
 	NvDsFrameMeta *frame_meta = NULL;
 	NvDsMetaList *l_frame = NULL;
-	guint i = 0;
+	guint i = 0;  // frame number in the batch
 
 	dgaccelerator->frame_num++;
 	CHECK_CUDA_STATUS( cudaSetDevice( dgaccelerator->gpu_id ), "Unable to set cuda device" );
@@ -832,12 +971,22 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		rect_params.height = dgaccelerator->video_info.height;
 
 		// Scale and convert the frame
-		if( get_converted_mat(
+		// if( get_converted_mat(
+		// 		dgaccelerator,
+		// 		surface,
+		// 		i,
+		// 		&rect_params,
+		// 		scale_ratio,
+		// 		dgaccelerator->video_info.width,
+		// 		dgaccelerator->video_info.height ) != GST_FLOW_OK )
+		// {
+		// 	goto error;
+		// }
+		if( get_converted_mat_2(
 				dgaccelerator,
 				surface,
 				i,
 				&rect_params,
-				scale_ratio,
 				dgaccelerator->video_info.width,
 				dgaccelerator->video_info.height ) != GST_FLOW_OK )
 		{
@@ -851,6 +1000,7 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		attach_metadata_full_frame( dgaccelerator, frame_meta, scale_ratio, output, i );
 		i++;
 	}
+
 	flow_ret = GST_FLOW_OK;
 
 error:
@@ -874,16 +1024,24 @@ error:
 /// \param[in] batch_id The frame number in the batch, unused
 ///
 static void attach_metadata_full_frame(
-GstDgAccelerator *dgaccelerator,
-NvDsFrameMeta *frame_meta,
-gdouble scale_ratio,
-DgAcceleratorOutput *output,
-guint batch_id )
+	GstDgAccelerator *dgaccelerator,
+	NvDsFrameMeta *frame_meta,
+	gdouble scale_ratio,
+	DgAcceleratorOutput *output,
+	guint batch_id )
 {
 	NvDsBatchMeta *batch_meta = frame_meta->base_meta.batch_meta;
 	NvDsObjectMeta *object_meta = NULL;
 	static gchar font_name[] = "Serif";
-	// For each object
+	// Set width / height to be the source frame width / height
+	int frame_width = frame_meta->source_frame_width;
+	int frame_height = frame_meta->source_frame_height;
+
+    // Calculate the scale factors for width and height
+    gdouble scale_ratio_width = frame_width / (gdouble) dgaccelerator->processing_width; 
+    gdouble scale_ratio_height = frame_height / (gdouble) dgaccelerator->processing_height; 
+
+	// Object Detection loop in DgAcceleratorOutput
 	for( gint i = 0; i < output->numObjects; i++ )
 	{
 		DgAcceleratorObject *obj = &output->object[ i ];
@@ -891,11 +1049,12 @@ guint batch_id )
 		NvOSD_RectParams &rect_params = object_meta->rect_params;
 		NvOSD_TextParams &text_params = object_meta->text_params;
 
-		// Assign bounding box coordinates
-		rect_params.left = obj->left;
-		rect_params.top = obj->top;
-		rect_params.width = obj->width;
-		rect_params.height = obj->height;
+		// Assign bounding box coordinates and
+		// Scale the bounding boxes
+		rect_params.left = obj->left * scale_ratio_width;
+		rect_params.top = obj->top * scale_ratio_height;
+		rect_params.width = obj->width * scale_ratio_width;
+		rect_params.height = obj->height * scale_ratio_height;
 
 		// Background color for rectangle, default off
 		rect_params.has_bg_color = 0;
@@ -905,16 +1064,10 @@ guint batch_id )
 		// Set box color
 		rect_params.border_color = dgaccelerator->color;
 
-		// Scale the bounding boxes proportionally based on how the object/frame was
-		// scaled during input
-		rect_params.left /= scale_ratio;
-		rect_params.top /= scale_ratio;
-		rect_params.width /= scale_ratio;
-		rect_params.height /= scale_ratio;
 
 		object_meta->object_id = UNTRACKED_OBJECT_ID;
 		g_strlcpy( object_meta->obj_label, obj->label, MAX_LABEL_SIZE );
-		// display_text required heap allocated memory
+		// display_text requires heap allocated memory
 		text_params.display_text = g_strdup( obj->label );
 		// Display text above the left top corner of the object
 		text_params.x_offset = rect_params.left;
@@ -928,8 +1081,233 @@ guint batch_id )
 		text_params.font_params.font_color = ( NvOSD_ColorParams ){ 1, 1, 1, 1 };
 
 		nvds_add_obj_meta_to_frame( frame_meta, object_meta, NULL );
-		frame_meta->bInferDone = TRUE;
 	}
+	// Pose Estimation in DgAcceleratorOutput
+	for( gint j = 0; j < output->numPoses; j++ )
+	{
+		DgAcceleratorPose *pose = &output->pose[ j ];
+		NvDsDisplayMeta *dmeta = nvds_acquire_display_meta_from_pool( batch_meta );
+		nvds_add_display_meta_to_frame( frame_meta, dmeta );
+
+		for( const auto &landmark : pose->landmarks )
+		{
+			int x = static_cast< int >( landmark.point.first );
+			int y = static_cast< int >( landmark.point.second );
+			// scale back
+			x = static_cast< int >( landmark.point.first * scale_ratio_width );
+			y = static_cast< int >( landmark.point.second * scale_ratio_height );
+			if( dmeta->num_circles == MAX_ELEMENTS_IN_DISPLAY_META )
+			{
+				dmeta = nvds_acquire_display_meta_from_pool( batch_meta );
+				nvds_add_display_meta_to_frame( frame_meta, dmeta );
+			}
+			// Add circle at each landmark
+			NvOSD_CircleParams &cparams = dmeta->circle_params[ dmeta->num_circles ];
+			cparams.xc = x;
+			cparams.yc = y;
+			cparams.radius = 8;
+			cparams.circle_color = NvOSD_ColorParams{ 0, 255, 0, 1 };
+			cparams.has_bg_color = 1;
+			cparams.bg_color = NvOSD_ColorParams{ 200, 0, 40, 1 };
+			dmeta->num_circles++;
+
+			// Add lines
+			for( int connection_index : landmark.connection )
+			{
+				if( connection_index >= 0 && connection_index < pose->landmarks.size() )
+				{
+					auto &connected_landmark = pose->landmarks[ connection_index ];
+					int x1 = static_cast< int >( connected_landmark.point.first );
+					int y1 = static_cast< int >( connected_landmark.point.second );
+					// scale back
+					x1 = static_cast< int >( connected_landmark.point.first * scale_ratio_width );
+					y1 = static_cast< int >( connected_landmark.point.second * scale_ratio_height );
+					if( dmeta->num_lines == MAX_ELEMENTS_IN_DISPLAY_META )
+					{
+						dmeta = nvds_acquire_display_meta_from_pool( batch_meta );
+						nvds_add_display_meta_to_frame( frame_meta, dmeta );
+					}
+					NvOSD_LineParams &lparams = dmeta->line_params[ dmeta->num_lines ];
+					lparams.x1 = x;
+					lparams.x2 = x1;
+					lparams.y1 = y;
+					lparams.y2 = y1;
+					lparams.line_width = 3;
+					lparams.line_color = NvOSD_ColorParams{ 255, 0, 0, 1 };
+					dmeta->num_lines++;
+				}
+			}
+		}
+		// nvds_add_display_meta_to_frame(frame_meta, dmeta);
+	}
+	// Classification loop in DgAcceleratorOutput
+	for( int i = 0; i < output->k; i++ )
+	{
+		DgAcceleratorClassObject *class_obj = &output->classifiedObject[ i ];
+		object_meta = nvds_acquire_obj_meta_from_pool( batch_meta );
+		NvOSD_TextParams &text_params = object_meta->text_params;
+
+		// Display the label and score as text above the frame
+		text_params.display_text = g_strdup_printf( "%s: %.2f", class_obj->label, class_obj->score );
+		text_params.x_offset = 10;
+		text_params.y_offset = 30 + i * 20;  // Adjust the y-offset for each label
+		text_params.font_params.font_name = font_name;
+		text_params.font_params.font_size = 11;
+		text_params.font_params.font_color = ( NvOSD_ColorParams ){ 1, 1, 1, 1 };
+
+		// Add a dark background behind the text
+		text_params.set_bg_clr = 1;
+		text_params.text_bg_clr = ( NvOSD_ColorParams ){ 0, 0, 0, 1 };  // Set background color to black
+
+		nvds_add_obj_meta_to_frame( frame_meta, object_meta, NULL );
+	}
+
+	// Segmentation loop in DgAcceleratorOutput
+	if( !output->segMap.class_map.empty() )
+	{
+		// Resize the segmentation map to original frame dimensions
+		// Convert class_map to cv::Mat
+		cv::Mat classMapMat( output->segMap.mask_height, output->segMap.mask_width, CV_32S, output->segMap.class_map.data() );
+		// Create a new cv::Mat for the resized map
+		cv::Mat resizedClassMapMat;
+		// Resize the class map
+		cv::resize( classMapMat, resizedClassMapMat, cv::Size( frame_width, frame_height ), 0, 0, cv::INTER_NEAREST );
+		// attach the segmentation metadata to the frame
+		attachSegmentationMetadata( frame_meta, dgaccelerator->frame_num, frame_width, frame_height, (const int *)resizedClassMapMat.data );
+	}
+	frame_meta->bInferDone = TRUE;
+}
+//////////// SEGMENTATION META FUNCTIONS //////////////////
+
+///
+/// \brief Releases the memory associated with the given segmentation metadata.
+///
+/// This function releases the memory associated with the given segmentation metadata. It first checks if the metadata
+/// is valid and if the class_map and class_probabilities_map pointers are not null. If they are not null, it frees the
+/// memory associated with them. Finally, it deletes the metadata object and sets the user_meta_data
+/// pointer to null.
+///
+/// \param[in] data A gpointer to the user meta data to be released.
+/// \param[in] user_data Unused, but required
+///
+static void releaseSegmentationMeta( gpointer data, gpointer user_data )
+{
+	if( data == nullptr )
+		return;
+
+	NvDsUserMeta *user_meta = (NvDsUserMeta *)data;
+	assert( user_meta != nullptr );
+	assert( user_meta->base_meta.meta_type == NVDSINFER_SEGMENTATION_META );
+
+	NvDsInferSegmentationMeta *segm_meta = (NvDsInferSegmentationMeta *)user_meta->user_meta_data;
+	if( segm_meta != nullptr )
+	{
+		if( segm_meta->class_map != nullptr )
+		{
+			delete[] segm_meta->class_map;  // Use delete[] to deallocate memory allocated with new[]
+			segm_meta->class_map = nullptr;
+		}
+
+		if( segm_meta->class_probabilities_map != nullptr )
+		{
+			delete[] segm_meta->class_probabilities_map;
+			segm_meta->class_probabilities_map = nullptr;
+		}
+		delete segm_meta;
+		user_meta->user_meta_data = nullptr;
+	}
+}
+///
+/// \brief Creates a deep copy of the given segmentation metadata.
+///
+/// This function creates a deep copy of the given segmentation metadata. It first checks if the metadata is valid and if
+/// the class_map pointer is not null. If it is not null and the width, height, and classes fields are positive, it creates
+/// a new metadata object and sets its fields to the same values as the source metadata. It then allocates memory for the
+/// class_map using g_memdup() function and copies the data from the source class_map to the new class_map. Finally, it
+/// returns the new metadata object.
+///
+/// \param[in] data A gpointer to the user meta data to be copied.
+/// \param[in] user_data Unused, but required
+/// \return A gpointer to the newly created copy of the user meta data.
+///
+static gpointer copySegmentationMeta( gpointer data, gpointer user_data )
+{
+	NvDsUserMeta *user_meta = (NvDsUserMeta *)data;
+	assert( user_meta != nullptr );
+	assert( user_meta->base_meta.meta_type == NVDSINFER_SEGMENTATION_META );
+
+	NvDsInferSegmentationMeta *segm_meta = (NvDsInferSegmentationMeta *)user_meta->user_meta_data;
+	assert( segm_meta != nullptr );
+
+	NvDsInferSegmentationMeta *ret = new NvDsInferSegmentationMeta();
+	std::memset( ret, 0, sizeof *ret );
+
+	// copy the data to meta
+	ret->unique_id = segm_meta->unique_id;
+	ret->classes = segm_meta->classes;
+	ret->width = segm_meta->width;
+	ret->height = segm_meta->height;
+
+	if( segm_meta->class_map != nullptr )
+	{
+		const size_t class_map_cnt = segm_meta->width * segm_meta->height;
+		ret->class_map = new int[ class_map_cnt ];
+		std::memcpy( ret->class_map, segm_meta->class_map, class_map_cnt * sizeof( int ) );
+	}
+
+	if( segm_meta->class_probabilities_map != nullptr )
+	{
+		const size_t prob_map_cnt = segm_meta->classes * segm_meta->width * segm_meta->height;
+		ret->class_probabilities_map = new float[ prob_map_cnt ];
+		std::memcpy( ret->class_probabilities_map, segm_meta->class_probabilities_map, prob_map_cnt * sizeof( float ) );
+	}
+
+	return ret;
+}
+
+///
+/// \brief Attaches segmentation metadata to a frame.
+///
+/// This function attaches segmentation metadata to the given frame. It creates a new NvDsInferSegmentationMeta
+/// object and populates its fields with the provided frame number, width, height, and class map. The class map
+/// is deep-copied from the source array. The user metadata is then assigned to the segmentation metadata object.
+///
+/// \param[in] frameMeta A pointer to the NvDsFrameMeta structure representing the frame.
+/// \param[in] frame_num The frame number to be assigned to the segmentation metadata.
+/// \param[in] width The width of the segmentation metadata.
+/// \param[in] height The height of the segmentation metadata.
+/// \param[in] class_map A pointer to the source array containing class map data.
+///
+void attachSegmentationMetadata( NvDsFrameMeta *frameMeta, guint64 frame_num, int width, int height, const int *class_map )
+{
+	assert( frameMeta );
+	NvDsBatchMeta *batchMeta = frameMeta->base_meta.batch_meta;
+
+	assert( batchMeta );
+	nvds_acquire_meta_lock( batchMeta );
+
+	NvDsUserMeta *user_meta = nvds_acquire_user_meta_from_pool( batchMeta );
+	NvDsInferSegmentationMeta *segm_meta = new NvDsInferSegmentationMeta();
+	segm_meta->unique_id = frame_num;
+	segm_meta->classes = UINT_MAX;
+	segm_meta->width = width;
+	segm_meta->height = height;
+	segm_meta->class_map = new int[ width * height ];
+	std::memcpy( segm_meta->class_map, class_map, width * height * sizeof( int ) );
+	segm_meta->class_probabilities_map = nullptr;
+	segm_meta->priv_data = nullptr;
+
+	user_meta->user_meta_data = segm_meta;
+
+	user_meta->base_meta.meta_type = (NvDsMetaType)NVDSINFER_SEGMENTATION_META;
+	user_meta->base_meta.release_func = releaseSegmentationMeta;
+	user_meta->base_meta.copy_func = copySegmentationMeta;
+
+	// add the meta to frame
+	assert( frameMeta );
+	nvds_add_user_meta_to_frame( frameMeta, user_meta );
+
+	nvds_release_meta_lock( batchMeta );
 }
 
 ///
