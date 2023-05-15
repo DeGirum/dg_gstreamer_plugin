@@ -34,8 +34,8 @@
 #include "gstdgaccelerator.h"
 #include "nvdefines.h"
 
-GST_DEBUG_CATEGORY_STATIC( gst_dgaccelerator_debug );  //!< gstreamer boilerplate
-#define GST_CAT_DEFAULT gst_dgaccelerator_debug        //!< gstreamer boilerplate
+GST_DEBUG_CATEGORY_STATIC( gst_dgaccelerator_debug );  //!< gstreamer debug boilerplate
+#define GST_CAT_DEFAULT gst_dgaccelerator_debug        //!< gstreamer debug boilerplate
 #define USE_EGLIMAGE    1                              //!< use EGL image for Nvidia output
 static GQuark _dsmeta_quark = 0;                       //!< quark definition for Nvidia Metadata
 
@@ -595,7 +595,7 @@ static gboolean gst_dgaccelerator_stop( GstBaseTransform *btrans )
 static gboolean gst_dgaccelerator_set_caps( GstBaseTransform *btrans, GstCaps *incaps, GstCaps *outcaps )
 {
 	GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR( btrans );
-	// Save the input video information, since this will be required later.
+	// Save the input video information
 	gst_video_info_from_caps( &dgaccelerator->video_info, incaps );
 
 	return TRUE;
@@ -605,10 +605,10 @@ error:
 }
 
 ///
-/// \brief Scales the entire frame or crops and scales objects while maintaining aspect ratio
+/// \brief Scales the entire frame or crops and scales objects to stretch to the desired frame
 ///
-/// This function scales the entire frame or crops and scales objects to the processing resolution while
-/// maintaining aspect ratio. It removes the padding required by hardware and converts the data from RGBA to RGB
+/// This function scales the entire frame or crops and scales objects to the processing resolution.
+/// It removes the padding required by hardware and converts the data from RGBA to RGB
 /// using OpenCV, unless the algorithm can work with padded data and/or can work with RGBA. The input NvBufSurface
 /// object is modified in-place to contain the output buffer. The function uses NVIDIA's NvBufSurfTransform API
 /// to perform scaling, format conversion, and cropping, as well as OpenCV's cvtColor function to convert the RGBA
@@ -620,160 +620,10 @@ error:
 /// \param[in] input_buf Pointer to the input NvBufSurface object
 /// \param[in] idx Index of the surface
 /// \param[in] crop_rect_params Pointer to the NvOSD_RectParams struct representing the crop rectangle parameters
-/// \param[out] ratio The aspect ratio of the input buffer
 /// \param[in] input_width Width of the input buffer
 /// \param[in] input_height Height of the input buffer
 /// \return Returns a GstFlowReturn value indicating the status of the function
 ///
-static GstFlowReturn get_converted_mat(
-	GstDgAccelerator *dgaccelerator,
-	NvBufSurface *input_buf,
-	gint idx,
-	NvOSD_RectParams *crop_rect_params,
-	gdouble &ratio,
-	gint input_width,
-	gint input_height )
-{
-	NvBufSurfTransform_Error err;
-	NvBufSurfTransformConfigParams transform_config_params;
-	NvBufSurfTransformParams transform_params;
-	NvBufSurfTransformRect src_rect;
-	NvBufSurfTransformRect dst_rect;
-	NvBufSurface ip_surf;
-	cv::Mat in_mat;
-	ip_surf = *input_buf;
-
-	ip_surf.numFilled = ip_surf.batchSize = 1;
-	ip_surf.surfaceList = &( input_buf->surfaceList[ idx ] );
-
-	gint src_left = GST_ROUND_UP_2( (unsigned int)crop_rect_params->left );
-	gint src_top = GST_ROUND_UP_2( (unsigned int)crop_rect_params->top );
-	gint src_width = GST_ROUND_DOWN_2( (unsigned int)crop_rect_params->width );
-	gint src_height = GST_ROUND_DOWN_2( (unsigned int)crop_rect_params->height );
-
-	// Maintain aspect ratio
-	double hdest = dgaccelerator->processing_width * src_height / (double)src_width;
-	double wdest = dgaccelerator->processing_height * src_width / (double)src_height;
-	guint dest_width, dest_height;
-
-	if( hdest <= dgaccelerator->processing_height )
-	{
-		dest_width = dgaccelerator->processing_width;
-		dest_height = hdest;
-	}
-	else
-	{
-		dest_width = wdest;
-		dest_height = dgaccelerator->processing_height;
-	}
-
-	// Configure transform session parameters for the transformation
-	transform_config_params.compute_mode = NvBufSurfTransformCompute_Default;
-	transform_config_params.gpu_id = dgaccelerator->gpu_id;
-	transform_config_params.cuda_stream = dgaccelerator->cuda_stream;
-
-	// Set the transform session parameters for the conversions executed in this
-	// thread.
-	err = NvBufSurfTransformSetSessionParams( &transform_config_params );
-	if( err != NvBufSurfTransformError_Success )
-	{
-		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "NvBufSurfTransformSetSessionParams failed with error %d", err ), ( NULL ) );
-		goto error;
-	}
-
-	// Calculate scaling ratio while maintaining aspect ratio
-	ratio = MIN( 1.0 * dest_width / src_width, 1.0 * dest_height / src_height );
-
-	if( ( crop_rect_params->width == 0 ) || ( crop_rect_params->height == 0 ) )
-	{
-		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "%s:crop_rect_params dimensions are zero", __func__ ), ( NULL ) );
-		goto error;
-	}
-
-#ifdef __aarch64__
-	if( ratio <= 1.0 / 16 || ratio >= 16.0 )
-	{
-		// Currently cannot scale by ratio > 16 or < 1/16 for Jetson
-		goto error;
-	}
-#endif
-	// Set the transform ROIs for source and destination
-	src_rect = { (guint)src_top, (guint)src_left, (guint)src_width, (guint)src_height };
-	dst_rect = { 0, 0, (guint)dest_width, (guint)dest_height };
-
-	// Set the transform parameters
-	transform_params.src_rect = &src_rect;
-	transform_params.dst_rect = &dst_rect;
-	transform_params.transform_flag = NVBUFSURF_TRANSFORM_FILTER | NVBUFSURF_TRANSFORM_CROP_SRC | NVBUFSURF_TRANSFORM_CROP_DST;
-	transform_params.transform_filter = NvBufSurfTransformInter_Default;
-
-	// Memset the memory
-	NvBufSurfaceMemSet( dgaccelerator->inter_buf, 0, 0, 0 );
-
-	// Transformation scaling+format conversion if any.
-	err = NvBufSurfTransform( &ip_surf, dgaccelerator->inter_buf, &transform_params );
-	if( err != NvBufSurfTransformError_Success )
-	{
-		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "NvBufSurfTransform failed with error %d while converting buffer", err ), ( NULL ) );
-		goto error;
-	}
-	// Map the buffer so that it can be accessed by CPU
-	if( NvBufSurfaceMap( dgaccelerator->inter_buf, 0, 0, NVBUF_MAP_READ ) != 0 )
-	{
-		goto error;
-	}
-	if( dgaccelerator->inter_buf->memType == NVBUF_MEM_SURFACE_ARRAY )
-	{
-		// Cache the mapped data for CPU access
-		NvBufSurfaceSyncForCpu( dgaccelerator->inter_buf, 0, 0 );
-	}
-
-	// Use OpenCV to remove padding and convert RGBA to BGR.
-	in_mat = cv::Mat(
-		dgaccelerator->processing_height,
-		dgaccelerator->processing_width,
-		CV_8UC4,
-		dgaccelerator->inter_buf->surfaceList[ 0 ].mappedAddr.addr[ 0 ],
-		dgaccelerator->inter_buf->surfaceList[ 0 ].pitch );
-
-#if( CV_MAJOR_VERSION >= 4 )
-	cv::cvtColor( in_mat, *dgaccelerator->cvmat, cv::COLOR_RGBA2BGR );
-#else
-	cv::cvtColor( in_mat, *dgaccelerator->cvmat, CV_RGBA2BGR );
-#endif
-
-	if( NvBufSurfaceUnMap( dgaccelerator->inter_buf, 0, 0 ) )
-	{
-		goto error;
-	}
-
-	if( dgaccelerator->is_integrated )
-	{
-#ifdef __aarch64__
-		// To use the converted buffer in CUDA, create an EGLImage and then use
-		// CUDA-EGL interop APIs
-		if( USE_EGLIMAGE )
-		{
-			if( NvBufSurfaceMapEglImage( dgaccelerator->inter_buf, 0 ) != 0 )
-			{
-				goto error;
-			}
-
-			// dgaccelerator->inter_buf->surfaceList[0].mappedAddr.eglImage
-			// Use interop APIs cuGraphicsEGLRegisterImage and
-			// cuGraphicsResourceGetMappedEglFrame to access the buffer in CUDA
-
-			// Destroy the EGLImage
-			NvBufSurfaceUnMapEglImage( dgaccelerator->inter_buf, 0 );
-		}
-#endif
-	}
-	return GST_FLOW_OK;
-
-error:
-	return GST_FLOW_ERROR;
-}
-/// STRETCHING CONVERT MAP FUNCTION
 static GstFlowReturn get_converted_mat_2(
 	GstDgAccelerator *dgaccelerator,
 	NvBufSurface *input_buf,
@@ -841,7 +691,7 @@ static GstFlowReturn get_converted_mat_2(
 	if( err != NvBufSurfTransformError_Success )
 	{
 		GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( "NvBufSurfTransform failed with error %d while converting buffer", err ), ( NULL ) );
-			goto error;
+		goto error;
 	}
 	// Map the buffer so that it can be accessed by CPU
 	if( NvBufSurfaceMap( dgaccelerator->inter_buf, 0, 0, NVBUF_MAP_READ ) != 0 )
@@ -862,45 +712,39 @@ static GstFlowReturn get_converted_mat_2(
 		dgaccelerator->inter_buf->surfaceList[ 0 ].mappedAddr.addr[ 0 ],
 		dgaccelerator->inter_buf->surfaceList[ 0 ].pitch );
 
-	#if( CV_MAJOR_VERSION >= 4 )
-		cv::cvtColor( in_mat, *dgaccelerator->cvmat, cv::COLOR_RGBA2BGR );
-	#else
-		cv::cvtColor( in_mat, *dgaccelerator->cvmat, CV_RGBA2BGR );
-	#endif
+#if( CV_MAJOR_VERSION >= 4 )
+	cv::cvtColor( in_mat, *dgaccelerator->cvmat, cv::COLOR_RGBA2BGR );
+#else
+	cv::cvtColor( in_mat, *dgaccelerator->cvmat, CV_RGBA2BGR );
+#endif
 
-		if( NvBufSurfaceUnMap( dgaccelerator->inter_buf, 0, 0 ) )
-		{
-			goto error;
-		}
+	if( NvBufSurfaceUnMap( dgaccelerator->inter_buf, 0, 0 ) )
+	{
+		goto error;
+	}
 
-		if( dgaccelerator->is_integrated )
+	if( dgaccelerator->is_integrated )
+	{
+#ifdef __aarch64__
+		// To use the converted buffer in CUDA, create an EGLImage and then use
+		// CUDA-EGL interop APIs
+		if( USE_EGLIMAGE )
 		{
-	#ifdef __aarch64__
-			// To use the converted buffer in CUDA, create an EGLImage and then use
-			// CUDA-EGL interop APIs
-			if( USE_EGLIMAGE )
+			if( NvBufSurfaceMapEglImage( dgaccelerator->inter_buf, 0 ) != 0 )
 			{
-				if( NvBufSurfaceMapEglImage( dgaccelerator->inter_buf, 0 ) != 0 )
-				{
-					goto error;
-				}
-
-				// dgaccelerator->inter_buf->surfaceList[0].mappedAddr.eglImage
-				// Use interop APIs cuGraphicsEGLRegisterImage and
-				// cuGraphicsResourceGetMappedEglFrame to access the buffer in CUDA
-
-				// Destroy the EGLImage
-				NvBufSurfaceUnMapEglImage( dgaccelerator->inter_buf, 0 );
+				goto error;
 			}
-	#endif
+
+			// Destroy the EGLImage
+			NvBufSurfaceUnMapEglImage( dgaccelerator->inter_buf, 0 );
 		}
-		return GST_FLOW_OK;
+#endif
+	}
+	return GST_FLOW_OK;
 
-	error:
-		return GST_FLOW_ERROR;
+error:
+	return GST_FLOW_ERROR;
 }
-
-
 
 ///
 /// \brief Main processing function for the GstDgAccelerator element
@@ -970,25 +814,8 @@ static GstFlowReturn gst_dgaccelerator_transform_ip( GstBaseTransform *btrans, G
 		rect_params.width = dgaccelerator->video_info.width;
 		rect_params.height = dgaccelerator->video_info.height;
 
-		// Scale and convert the frame
-		// if( get_converted_mat(
-		// 		dgaccelerator,
-		// 		surface,
-		// 		i,
-		// 		&rect_params,
-		// 		scale_ratio,
-		// 		dgaccelerator->video_info.width,
-		// 		dgaccelerator->video_info.height ) != GST_FLOW_OK )
-		// {
-		// 	goto error;
-		// }
-		if( get_converted_mat_2(
-				dgaccelerator,
-				surface,
-				i,
-				&rect_params,
-				dgaccelerator->video_info.width,
-				dgaccelerator->video_info.height ) != GST_FLOW_OK )
+		if( get_converted_mat_2( dgaccelerator, surface, i, &rect_params, dgaccelerator->video_info.width, dgaccelerator->video_info.height ) !=
+			GST_FLOW_OK )
 		{
 			goto error;
 		}
@@ -1037,9 +864,9 @@ static void attach_metadata_full_frame(
 	int frame_width = frame_meta->source_frame_width;
 	int frame_height = frame_meta->source_frame_height;
 
-    // Calculate the scale factors for width and height
-    gdouble scale_ratio_width = frame_width / (gdouble) dgaccelerator->processing_width; 
-    gdouble scale_ratio_height = frame_height / (gdouble) dgaccelerator->processing_height; 
+	// Calculate the scale factors for width and height
+	gdouble scale_ratio_width = frame_width / (gdouble)dgaccelerator->processing_width;
+	gdouble scale_ratio_height = frame_height / (gdouble)dgaccelerator->processing_height;
 
 	// Object Detection loop in DgAcceleratorOutput
 	for( gint i = 0; i < output->numObjects; i++ )
@@ -1063,7 +890,6 @@ static void attach_metadata_full_frame(
 		rect_params.border_width = 3;
 		// Set box color
 		rect_params.border_color = dgaccelerator->color;
-
 
 		object_meta->object_id = UNTRACKED_OBJECT_ID;
 		g_strlcpy( object_meta->obj_label, obj->label, MAX_LABEL_SIZE );
@@ -1177,7 +1003,6 @@ static void attach_metadata_full_frame(
 	}
 	frame_meta->bInferDone = TRUE;
 }
-//////////// SEGMENTATION META FUNCTIONS //////////////////
 
 ///
 /// \brief Releases the memory associated with the given segmentation metadata.

@@ -83,7 +83,7 @@ struct DgAcceleratorCtx
 	unsigned int curIndex;                      //!< Circular buffer index implementation
 	std::chrono::time_point< std::chrono::high_resolution_clock > start_time;  //!< Clock for counting total duration
 	std::vector< DgAcceleratorOutput * > out;  //!< Vector of pointers to output structs for circular buffer implementation
-	// Temporary error handling without lastError()
+	// Error handling
 	bool failed = false;     //!< Flag indicating if an error occurred
 	std::string failReason;  //!< Reason for failure
 };
@@ -105,7 +105,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	// Initialize number of input streams
 	NUM_INPUT_STREAMS = initParams->numInputStreams;
 	// Set the ring buffer size
-	RING_BUFFER_SIZE = 2 * NUM_INPUT_STREAMS;  // 2x the number of input streams works best
+	RING_BUFFER_SIZE = 2 * NUM_INPUT_STREAMS;  // 2 * the number of input streams
 	// Set the ceiling for frame skipping
 	FRAME_DIFF_LIMIT = std::max( 3, RING_BUFFER_SIZE - 1 );
 
@@ -127,7 +127,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	DG::ModelParamsWriter mparams;                       // Model Parameters writer to pass to the model
 
 	if( modelNameStr.find( '/' ) == std::string::npos )  // Check if requesting a local model
-	{                                                    // Validate model name here:
+	{                                                    // Validate model name:
 		std::vector< DG::ModelInfo > modelList;
 		DG::modelzooListGet( serverIP, modelList );
 		auto model_id = DG::modelFind( serverIP, { modelNameStr } );
@@ -139,7 +139,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 				std::cout << m.name << ", WxH: " << m.W << "x" << m.H << "\n";
 			throw std::runtime_error( "Model '" + modelNameStr + "' is not found in model zoo" );
 		}
-		// Validate model width/height here:
+		// Validate model width/height:
 		if( initParams->processingHeight != model_id.H )
 		{
 			throw std::runtime_error( "Property processing-height does not match model." );
@@ -168,8 +168,8 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	// Callback function for parsing the model inference data for a frame
 	auto callback = [ ctx ]( const json &response, const std::string &fr ) {
 		unsigned int index = std::stoi( fr );  // Index of the Output struct to fill
-											   // Deallocate the output struct prior to working on it:
 
+		// Deallocate the output struct prior to working on it:
 		// Deallocate memory for Pose Estimation
 		for( int i = 0; i < ctx->out[ index ]->numPoses; i++ )
 		{
@@ -337,24 +337,16 @@ void parseOutput( const json &response, const unsigned int &index, std::vector< 
 DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char *data )
 {
 	ctx->diff++;  // Increment # of frames waiting to be processed
-
 	// Immediately need to add to curIndex so that the circular buffer can keep going
 	// Wrap around RING_BUFFER_SIZE for circular buffer implementation
 	ctx->curIndex %= RING_BUFFER_SIZE;
 	int curFrameIndex = ctx->curIndex++;
 
-	// If an error happens during inference (runtime validation)
+	// If an error happens during inference (such as runtime model parameter validation)
 	if( ctx->failed )
 	{
 		throw std::runtime_error( ctx->failReason );
-		// DgAcceleratorCtxDeinit (ctx);
-		// GST_ELEMENT_ERROR( dgaccelerator, STREAM, FAILED, ( ctx->failReason ), ( NULL ) );
 	}
-	// switch to lastError() :
-	// std::string possible_error = ctx->model->lastError();
-	// if( !possible_error.empty() ){
-	// 	throw std::runtime_error( possible_error );
-	// }
 
 	// Frame skip implementation:
 	if( ctx->initParams.drop_frames )
@@ -367,16 +359,15 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 	{
 		// Extract the mat
 		cv::Mat frameMat( ctx->initParams.processingHeight, ctx->initParams.processingWidth, CV_8UC3, data );
-		// (Usually is square) We can now pass it to the AI Model.
 		// encode this mat into a jpeg buffer vector.
 		std::vector< int > param = { cv::IMWRITE_JPEG_QUALITY, 85 };
 		std::vector< unsigned char > ubuff = {};
-		// The function imencode compresses the image and stores it in the memory buffer that is resized to fit the result.
+		// Compress the image and store it in the memory buffer that is resized to fit the result.
 		cv::imencode( ".jpeg", frameMat, ubuff, param );
 		// Pass to the model.
 		std::vector< std::vector< char > > frameVect{ std::vector< char >( ubuff.begin(), ubuff.end() ) };
-		ctx->model->predict( frameVect, std::to_string( curFrameIndex ) );  // Call the predict function
 		// This passes the data buffer and the current frame output object index to work on
+		ctx->model->predict( frameVect, std::to_string( curFrameIndex ) );  // Call the predict function
 		frameMat.release();
 	}
 	return ctx->out[ curFrameIndex ];
