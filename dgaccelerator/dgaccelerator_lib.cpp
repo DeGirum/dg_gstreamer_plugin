@@ -45,6 +45,16 @@ using json_ld = nlohmann::basic_json< std::map, std::vector, std::string, bool, 
 int NUM_INPUT_STREAMS;  //!< Number of input streams
 int RING_BUFFER_SIZE;   //!< Size of circular queue of output objects
 int FRAME_DIFF_LIMIT;   //!< Maximum number of frames waiting to be processed
+#define DEFAULT_EAGER_BATCH_SIZE          8                                          //!< Default eager batch size
+#define DEFAULT_INPUT_RAW_DATA_TYPE       "DG_UINT8"                                 //!< Default input raw data type
+#define DEFAULT_OUTPUT_POSTPROCESS_TYPE   "None"                                     //!< Default output postprocess type
+#define DEFAULT_OUTPUT_CONF_THRESHOLD     0.1                                        //!< Default output confidence threshold
+#define DEFAULT_OUTPUT_NMS_THRESHOLD      0.6                                        //!< Default output NMS threshold
+#define DEFAULT_OUTPUT_TOP_K              0                                          //!< Default output top K
+#define DEFAULT_MAX_DETECTIONS            20                                         //!< Default maximum detections
+#define DEFAULT_MAX_DETECTIONS_PER_CLASS  100                                        //!< Default maximum detections per class
+#define DEFAULT_MAX_CLASSES_PER_DETECTION 30                                         //!< Default maximum classes per detection
+#define DEFAULT_USE_REGULAR_NMS           true                                       //!< Default use regular NMS
 
 // parseOutput function declaration
 void parseOutput( const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx );
@@ -73,10 +83,12 @@ ModelType determineModelType( const json &response )
 	return CLASSIFICATION;
 }
 
-/// \brief Context for the element, holds initParams for the model and a smart pointer to the model
+/// \brief Context for the element, holds parameters for the model and a smart pointer to the model
 struct DgAcceleratorCtx
 {
-	DgAcceleratorInitParams initParams;         //!< Initialization parameters for the model
+	bool drop_frames;                           //!< Toggle for dropping frames
+	gint processing_width;                      //!< Processing width of the model
+	gint processing_height;                     //!< Processing height of the model
 	std::unique_ptr< DG::AIModelAsync > model;  //!< Smart pointer to the model
 	size_t diff = 0;                            //!< Counter for the number of frames waiting for callback at any given moment
 	size_t framesProcessed = 0;                 //!< Frame count for FPS calculation.
@@ -91,19 +103,21 @@ struct DgAcceleratorCtx
 ///
 /// \brief Initializes the DgAccelerator model with the given parameters and sets the callback function
 ///
-/// This function initializes the DgAccelerator model with the given parameters using DgAcceleratorInitParams struct.
+/// This function initializes the DgAccelerator model with the given parameters using GstDgAccelerator struct.
 /// It also sets the callback function for asynchronous operation of inference. The function returns a pointer to the
 /// DgAcceleratorCtx instance.
 ///
-/// \param[in] initParams Pointer to the DgAcceleratorInitParams struct for model initialization
+/// \param[in] dgaccelerator Pointer to the GstDgAccelerator element for model initialization
 /// \return Returns a pointer to the DgAcceleratorCtx instance
 ///
-DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
+DgAcceleratorCtx *DgAcceleratorCtxInit( GstDgAccelerator *dgaccelerator )
 {
 	DgAcceleratorCtx *ctx = (DgAcceleratorCtx *)calloc( 1, sizeof( DgAcceleratorCtx ) );
-	ctx->initParams = *initParams;
+	ctx->drop_frames = dgaccelerator->drop_frames;
+	ctx->processing_width = dgaccelerator->processing_width;
+	ctx->processing_height = dgaccelerator->processing_height;
 	// Initialize number of input streams
-	NUM_INPUT_STREAMS = initParams->numInputStreams;
+	NUM_INPUT_STREAMS = dgaccelerator->batch_size;
 	// Set the ring buffer size
 	RING_BUFFER_SIZE = 2 * NUM_INPUT_STREAMS;  // 2 * the number of input streams
 	// Set the ceiling for frame skipping
@@ -118,13 +132,57 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	// Initialize curIndex
 	ctx->curIndex = 0;
 
-	const std::string serverIP = ctx->initParams.server_ip;
-	std::string modelNameStr = ctx->initParams.model_name;
+	const std::string serverIP = dgaccelerator->server_ip;
+	std::string modelNameStr = dgaccelerator->model_name;
 	std::cout << "\n\nINITIALIZING MODEL with IP ";
 	std::cout << serverIP << " and name ";
-	std::cout << ctx->initParams.model_name << "\n";
+	std::cout << dgaccelerator->model_name << "\n";
 
-	DG::ModelParamsWriter mparams;                       // Model Parameters writer to pass to the model
+
+	DG::ModelParamsWriter mparams;  // Model Parameters writer to pass to the model
+
+	// Sets the model parameters for each parameter set in model_params
+	// set the eager batch size property
+	if (dgaccelerator->model_params.eager_batch_size != DEFAULT_EAGER_BATCH_SIZE)
+		mparams.EagerBatchSize_set(dgaccelerator->model_params.eager_batch_size);
+
+	// set the input raw data type property
+	if (strcmp(dgaccelerator->model_params.input_raw_data_type, DEFAULT_INPUT_RAW_DATA_TYPE) != 0)
+		mparams.InputRawDataType_set(dgaccelerator->model_params.input_raw_data_type);
+
+	// set the output postprocess type property
+	if (strcmp(dgaccelerator->model_params.output_postprocess_type, DEFAULT_OUTPUT_POSTPROCESS_TYPE) != 0)
+		mparams.OutputPostprocessType_set(dgaccelerator->model_params.output_postprocess_type);
+
+	// set the output confidence threshold property
+	if (dgaccelerator->model_params.output_conf_threshold != DEFAULT_OUTPUT_CONF_THRESHOLD)
+		mparams.OutputConfThreshold_set(dgaccelerator->model_params.output_conf_threshold);
+
+	// set the output NMS threshold property
+	if (dgaccelerator->model_params.output_nms_threshold != DEFAULT_OUTPUT_NMS_THRESHOLD)
+		mparams.OutputNMSThreshold_set(dgaccelerator->model_params.output_nms_threshold);
+
+	// set the output top K property
+	if (dgaccelerator->model_params.output_top_k != DEFAULT_OUTPUT_TOP_K)
+		mparams.OutputTopK_set(dgaccelerator->model_params.output_top_k);
+
+	// set the max detections property
+	if (dgaccelerator->model_params.max_detections != DEFAULT_MAX_DETECTIONS)
+		mparams.MaxDetections_set(dgaccelerator->model_params.max_detections);
+
+	// set the max detections per class property
+	if (dgaccelerator->model_params.max_detections_per_class != DEFAULT_MAX_DETECTIONS_PER_CLASS)
+		mparams.MaxDetectionsPerClass_set(dgaccelerator->model_params.max_detections_per_class);
+
+	// set the max classes per detection property
+	if (dgaccelerator->model_params.max_classes_per_detection != DEFAULT_MAX_CLASSES_PER_DETECTION)
+		mparams.MaxClassesPerDetection_set(dgaccelerator->model_params.max_classes_per_detection);
+
+	// set the use regular NMS property
+	if (dgaccelerator->model_params.use_regular_nms != DEFAULT_USE_REGULAR_NMS)
+		mparams.UseRegularNMS_set(dgaccelerator->model_params.use_regular_nms);
+
+
 
 	if( modelNameStr.find( '/' ) == std::string::npos )  // Check if requesting a local model
 	{                                                    // Validate model name:
@@ -140,12 +198,12 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 			throw std::runtime_error( "Model '" + modelNameStr + "' is not found in model zoo" );
 		}
 		// Validate model width/height:
-		if( initParams->processingHeight != model_id.H )
+		if( dgaccelerator->processing_height != model_id.H )
 		{
 			throw std::runtime_error( "Property processing-height does not match model." );
 			return nullptr;
 		}
-		if( initParams->processingWidth != model_id.W )
+		if( dgaccelerator->processing_width != model_id.W )
 		{
 			throw std::runtime_error( "Property processing-width does not match model." );
 			return nullptr;
@@ -154,14 +212,14 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *initParams )
 	else  // Cloud model requested, set the token in model params
 	{     // Can't validate cloud model name or cloud token. Happens in PLAYING state
 		// Instead we at least can check if cloud token is missing
-		if( strlen( initParams->cloud_token ) == 0 )
+		if( strlen( dgaccelerator->cloud_token ) == 0 )
 		{
 			throw std::runtime_error( "No cloud token provided for the chosen cloud model." );
 			return nullptr;
 		}
 		else
 		{
-			mparams.CloudToken_set( initParams->cloud_token );
+			mparams.CloudToken_set( dgaccelerator->cloud_token );
 		}
 		// Validation of cloud model existence and width/height match happens in PLAYING state.
 	}
@@ -349,7 +407,7 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 	}
 
 	// Frame skip implementation:
-	if( ctx->initParams.drop_frames )
+	if( ctx->drop_frames )
 	{
 		if( ctx->diff > FRAME_DIFF_LIMIT )  // if FRAME_DIFF_LIMIT frames behind
 			goto skip;
@@ -358,7 +416,7 @@ DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char 
 	if( data != NULL )  // Data is a pointer to a cv::Mat.
 	{
 		// Extract the mat
-		cv::Mat frameMat( ctx->initParams.processingHeight, ctx->initParams.processingWidth, CV_8UC3, data );
+		cv::Mat frameMat( ctx->processing_height, ctx->processing_width, CV_8UC3, data );
 		// encode this mat into a jpeg buffer vector.
 		std::vector< int > param = { cv::IMWRITE_JPEG_QUALITY, 85 };
 		std::vector< unsigned char > ubuff = {};

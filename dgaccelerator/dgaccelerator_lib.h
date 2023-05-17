@@ -27,23 +27,14 @@
 #define __DGACCELERATOR_LIB__
 
 #include <string>
+#include <vector>
+
 
 constexpr int DG_MAX_LABEL_SIZE = 128;  //!< Max string size to allocate
 constexpr int MAX_OBJ_PER_FRAME = 35;   //!< Max objects to draw per frame
 
 class DgAcceleratorCtx;
-
-/// \brief Init parameters structure as input, required for instantiating dgaccelerator_lib
-struct DgAcceleratorInitParams
-{
-	int processingWidth;                    //!< Width of the model
-	int processingHeight;                   //!< Height of the model
-	char model_name[ DG_MAX_LABEL_SIZE ];   //!< Model name
-	char server_ip[ DG_MAX_LABEL_SIZE ];    //!< Server IP
-	int numInputStreams;                    //!< Number of input streams
-	char cloud_token[ DG_MAX_LABEL_SIZE ];  //!< Cloud token
-	bool drop_frames;                       //!< Drop frames toggle
-};
+typedef struct _GstDgAccelerator GstDgAccelerator;  //!< Forward declaration for GstDgAccelerator
 
 /// \brief Result from Object Detection Model
 struct DgAcceleratorObject
@@ -101,7 +92,7 @@ struct DgAcceleratorOutput
 };
 
 // Initialize library
-DgAcceleratorCtx *DgAcceleratorCtxInit( DgAcceleratorInitParams *init_params );
+DgAcceleratorCtx *DgAcceleratorCtxInit( GstDgAccelerator *dgaccelerator );
 
 // Process output
 DgAcceleratorOutput *DgAcceleratorProcess( DgAcceleratorCtx *ctx, unsigned char *data );
