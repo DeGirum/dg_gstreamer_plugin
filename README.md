@@ -116,19 +116,20 @@ Here, this pipeline uses a default ```nvtracker``` configuration. It can be conf
 ```sh
 gst-launch-1.0 nvurisrcbin uri=file://<video-file-location> ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator processing-width=<width> processing-height=<height> server_ip=<server-ip> model-name=<model-name> drop-frames=false ! nvdsosd ! queue ! nvegltransform ! nveglglessink enable-last-sample=0
 ```
-![1videoPoseEstimation](https://github.com/DeGirum/dg_gstreamer_plugin/assets/126506976/af36d1df-020d-46ad-b1ae-4b25e433a2f1)
+![1videoPoseEstimation](https://github.com/DeGirum/dg_gstreamer_plugin/assets/126506976/ebe9be93-9031-4691-8301-d9080a366a9e)
 
 ## 11. Inference and visualization of Classification
 ```sh
 gst-launch-1.0 nvurisrcbin uri=file://<video-file-location> ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator processing-width=<width> processing-height=<height> server_ip=<server-ip> model-name=<model-name> drop-frames=false ! nvdsosd ! queue ! nvegltransform ! nveglglessink enable-last-sample=0
 ```
-![1videoClassification](https://github.com/DeGirum/dg_gstreamer_plugin/assets/126506976/88de1d33-7e01-42e0-88de-1a8d452f2213)
+![1videoClassification](https://github.com/DeGirum/dg_gstreamer_plugin/assets/126506976/e51c5c1a-9863-4a4d-a038-2f39aec82450)
 
 ## 12. Inference and visualization of Segmentation
 ```sh
 gst-launch-1.0 nvurisrcbin file-loop=true uri=file://<video-file-location> ! videorate drop-only=true max-rate=24 ! m.sink_0 nvstreammux name=m batch-size=1 width=1920 height=1080 ! queue ! dgaccelerator processing-width=<width> processing-height=<height> server_ip=<server-ip> model-name=<model-name> drop-frames=false ! nvsegvisual width=1920 height=1080 ! queue ! nvegltransform ! nveglglessink enable-last-sample=0
 ```
-![1videoSegmentation](https://github.com/DeGirum/dg_gstreamer_plugin/assets/126506976/f3d0992e-c040-47d5-8227-ee728acebf91)
+![1videoSegmentation](https://github.com/DeGirum/dg_gstreamer_plugin/assets/126506976/7d5a447c-0d71-40dc-9a73-a30b67d8741f)
+
 For Segmentation models, it is helpful to cap the framerate of the incoming video to match the model speed using the ```videorate``` element.
 
 # Plugin Properties
