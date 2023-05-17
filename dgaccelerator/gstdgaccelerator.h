@@ -29,6 +29,9 @@
 #define MAX_LABEL_SIZE 128
 
 #include <memory>
+// Degirum
+#include "dg_model_parameters.h"
+#include "dgaccelerator_lib.h"
 
 // GStreamer
 #include <gst/base/gstbasetransform.h>
@@ -45,9 +48,6 @@
 // OpenCV
 #include "opencv2/highgui/highgui.hpp"
 #include "opencv2/imgproc/imgproc.hpp"
-
-// Degirum
-#include "dgaccelerator_lib.h"
 
 // Package and library details boilerplate for plugin_init
 #define PACKAGE        "dgaccelerator"
@@ -104,6 +104,22 @@ struct _GstDgAccelerator
 	bool drop_frames;                                               //!< Skip frames toggle
 	GstDgAcceleratorBoxColor box_color;                             //!< Box Color for visualization
 	NvOSD_ColorParams color = ( NvOSD_ColorParams ){ 1, 0, 0, 1 };  //!< Box Color converted into a NvOSD_ColorParams (default red)
+
+	/// \brief model parameters struct
+	struct
+	{
+		gboolean measure_time;           //!< Flag indicating whether to measure the time of inference
+		guint eager_batch_size;          //!< Batch size for eager execution
+		gchar *input_raw_data_type;      //!< Type of input raw data
+		gchar *output_postprocess_type;  //!< Type of output post-processing
+		gdouble output_conf_threshold;   //!< Confidence threshold for output
+		gdouble output_nms_threshold;    //!< Non-Maximum Suppression (NMS) threshold for output
+		guint output_top_k;              //!< Number of top detections to keep
+		gint max_detections;             //!< Maximum number of detections
+		gint max_detections_per_class;   //!< Maximum number of detections per class
+		gint max_classes_per_detection;  //!< Maximum number of classes per detection
+		gboolean use_regular_nms;        //!< Flag indicating whether to use regular NMS
+	} model_params;
 };
 
 /// \brief GStreamer boilerplate structure

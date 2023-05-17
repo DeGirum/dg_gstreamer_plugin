@@ -168,7 +168,8 @@ TEST_F (GStreamerPluginTest, TestSettingGettingProperties) {
 			g_object_get_property(G_OBJECT(element), prop->name, &actual_value);
 
 			// Check if the retrieved value matches the expected value
-			EXPECT_TRUE(g_param_values_cmp(prop, &some_value, &actual_value) == 0);
+			bool SetValEqualsRetrievedVal = g_param_values_cmp(prop, &some_value, &actual_value) == 0;
+			EXPECT_TRUE(SetValEqualsRetrievedVal);
 
 			g_value_unset(&some_value);
 			g_value_unset(&actual_value);

@@ -30,6 +30,7 @@
 #include <ostream>
 #include <sstream>
 #include <string>
+#include <string_view>
 
 #include "gstdgaccelerator.h"
 #include "nvdefines.h"
@@ -51,21 +52,44 @@ enum
 	PROP_CLOUD_TOKEN,
 	PROP_BOX_COLOR,
 	PROP_DROP_FRAMES,
-	PROP_GPU_DEVICE_ID
+	PROP_GPU_DEVICE_ID,
+	PROP_MEASURE_TIME,
+	PROP_EAGER_BATCH_SIZE,
+	PROP_INPUT_RAW_DATA_TYPE,
+	PROP_OUTPUT_POSTPROCESS_TYPE,
+	PROP_OUTPUT_CONF_THRESHOLD,
+	PROP_OUTPUT_NMS_THRESHOLD,
+	PROP_OUTPUT_TOP_K,
+	PROP_MAX_DETECTIONS,
+	PROP_MAX_DETECTIONS_PER_CLASS,
+	PROP_MAX_CLASSES_PER_DETECTION,
+	PROP_USE_REGULAR_NMS
 };
 
 // DEFAULT PROPERTY VALUES
-#define DEFAULT_UNIQUE_ID         15                                         //!< default unique ID
-#define DEFAULT_PROCESSING_WIDTH  512                                        //!< default processing width
-#define DEFAULT_PROCESSING_HEIGHT 512                                        //!< default processing height
-#define DEFAULT_GPU_ID            0                                          //!< default GPU ID
-#define DEFAULT_MODEL_NAME        "yolo_v5s_coco--512x512_quant_n2x_orca_1"  //!< default model name
-#define DEFAULT_SERVER_IP         "127.0.0.1"                                //!< default server IP
-#define DEFAULT_CLOUD_TOKEN       ""                                         //!< default cloud token
-#define DEFAULT_DROP_FRAMES       true                                       //!< default drop frames
-#define DEFAULT_BOX_COLOR         DGACCELERATOR_BOX_COLOR_RED                //!< default box color
+#define DEFAULT_UNIQUE_ID                 15                                         //!< Default unique ID
+#define DEFAULT_PROCESSING_WIDTH          512                                        //!< Default processing width
+#define DEFAULT_PROCESSING_HEIGHT         512                                        //!< Default processing height
+#define DEFAULT_GPU_ID                    0                                          //!< Default GPU ID
+#define DEFAULT_MODEL_NAME                "yolo_v5s_coco--512x512_quant_n2x_orca_1"  //!< Default model name
+#define DEFAULT_SERVER_IP                 "127.0.0.1"                                //!< Default server IP
+#define DEFAULT_CLOUD_TOKEN               ""                                         //!< Default cloud token
+#define DEFAULT_DROP_FRAMES               true                                       //!< Default drop frames
+#define DEFAULT_BOX_COLOR                 DGACCELERATOR_BOX_COLOR_RED                //!< Default box color
+#define DEFAULT_MEASURE_TIME              false                                      //!< Default measure time
+#define DEFAULT_EAGER_BATCH_SIZE          8                                          //!< Default eager batch size
+#define DEFAULT_INPUT_RAW_DATA_TYPE       "DG_UINT8"                                 //!< Default input raw data type
+#define DEFAULT_OUTPUT_POSTPROCESS_TYPE   "None"                                     //!< Default output postprocess type
+#define DEFAULT_OUTPUT_CONF_THRESHOLD     0.1                                        //!< Default output confidence threshold
+#define DEFAULT_OUTPUT_NMS_THRESHOLD      0.6                                        //!< Default output NMS threshold
+#define DEFAULT_OUTPUT_TOP_K              0                                          //!< Default output top K
+#define DEFAULT_MAX_DETECTIONS            20                                         //!< Default maximum detections
+#define DEFAULT_MAX_DETECTIONS_PER_CLASS  100                                        //!< Default maximum detections per class
+#define DEFAULT_MAX_CLASSES_PER_DETECTION 30                                         //!< Default maximum classes per detection
+#define DEFAULT_USE_REGULAR_NMS           true                                       //!< Default use regular NMS
 
-#define GST_CAPS_FEATURE_MEMORY_NVMM "memory:NVMM"                           //!< NVIDIA hardware-allocated memory
+
+#define GST_CAPS_FEATURE_MEMORY_NVMM "memory:NVMM"  //!< NVIDIA hardware-allocated memory
 
 /// \brief Template for sink pad
 static GstStaticPadTemplate gst_dgaccelerator_sink_template = GST_STATIC_PAD_TEMPLATE(
@@ -136,6 +160,7 @@ static GType gst_dgaccelerator_box_color_get_type( void )
 /// \param[in] klass gstreamer boilerplate input class
 static void gst_dgaccelerator_class_init( GstDgAcceleratorClass *klass )
 {
+
 	GObjectClass *gobject_class;
 	GstElementClass *gstelement_class;
 	GstBaseTransformClass *gstbasetransform_class;
@@ -242,6 +267,117 @@ static void gst_dgaccelerator_class_init( GstDgAcceleratorClass *klass )
 			G_MAXUINT,
 			0,
 			GParamFlags( G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | GST_PARAM_MUTABLE_READY ) ) );
+	
+	// model_params property installation
+	g_object_class_install_property(
+		gobject_class,
+		PROP_MEASURE_TIME,
+		g_param_spec_boolean(
+			"measure_time",
+			"measure_time",
+			"measure_time",
+			DEFAULT_MEASURE_TIME,
+			G_PARAM_READWRITE ) );
+
+	g_object_class_install_property(
+		gobject_class,
+		PROP_EAGER_BATCH_SIZE,
+		g_param_spec_uint(
+			"eager_batch_size",
+			"eager_batch_size",
+			"eager_batch_size", 0, G_MAXUINT, 
+			static_cast< unsigned int >(DEFAULT_EAGER_BATCH_SIZE),
+			G_PARAM_READWRITE ) );
+
+	g_object_class_install_property(
+		gobject_class,
+		PROP_INPUT_RAW_DATA_TYPE,
+		g_param_spec_string(
+			"input_raw_data_type",
+			"input_raw_data_type",
+			"input_raw_data_type",
+			DEFAULT_INPUT_RAW_DATA_TYPE,
+			G_PARAM_READWRITE ) );
+
+	g_object_class_install_property(
+		gobject_class,
+		PROP_OUTPUT_POSTPROCESS_TYPE,
+		g_param_spec_string(
+			"output_postprocess_type",
+			"output_postprocess_type",
+			"output_postprocess_type",
+			DEFAULT_OUTPUT_POSTPROCESS_TYPE,
+			G_PARAM_READWRITE ) );
+
+	g_object_class_install_property(
+		gobject_class,
+		PROP_OUTPUT_CONF_THRESHOLD,
+		g_param_spec_double(
+			"output_conf_threshold",
+			"output_conf_threshold",
+			"output_conf_threshold", G_MINDOUBLE, G_MAXDOUBLE, 
+			DEFAULT_OUTPUT_CONF_THRESHOLD,
+			G_PARAM_READWRITE ) );
+
+	g_object_class_install_property(
+		gobject_class,
+		PROP_OUTPUT_NMS_THRESHOLD,
+		g_param_spec_double(
+			"output_nms_threshold",
+			"output_nms_threshold",
+			"output_nms_threshold", G_MINDOUBLE, G_MAXDOUBLE, 
+			DEFAULT_OUTPUT_NMS_THRESHOLD,
+			G_PARAM_READWRITE ) );
+
+	g_object_class_install_property(
+		gobject_class,
+		PROP_OUTPUT_TOP_K,
+		g_param_spec_uint(
+			"output_top_k",
+			"output_top_k",
+			"output_top_k", 0, G_MAXUINT, 
+			static_cast< unsigned int >(DEFAULT_OUTPUT_TOP_K),
+			G_PARAM_READWRITE ) );
+
+	g_object_class_install_property(
+		gobject_class,
+		PROP_MAX_DETECTIONS,
+		g_param_spec_int(
+			"max_detections",
+			"max_detections",
+			"max_detections", G_MININT, G_MAXINT,
+			DEFAULT_MAX_DETECTIONS,
+			G_PARAM_READWRITE ) );
+
+	g_object_class_install_property(
+		gobject_class,
+		PROP_MAX_DETECTIONS_PER_CLASS,
+		g_param_spec_int(
+			"max_detections_per_class",
+			"max_detections_per_class",
+			"max_detections_per_class", G_MININT, G_MAXINT,
+			DEFAULT_MAX_DETECTIONS_PER_CLASS,
+			G_PARAM_READWRITE ) );
+
+	g_object_class_install_property(
+		gobject_class,
+		PROP_MAX_CLASSES_PER_DETECTION,
+		g_param_spec_int(
+			"max_classes_per_detection",
+			"max_classes_per_detection",
+			"max_classes_per_detection", G_MININT, G_MAXINT,
+			DEFAULT_MAX_CLASSES_PER_DETECTION,
+			G_PARAM_READWRITE ) );
+	g_object_class_install_property(
+		gobject_class,
+		PROP_USE_REGULAR_NMS,
+		g_param_spec_boolean(
+			"use_regular_nms",
+			"use_regular_nms",
+			"use_regular_nms",
+			DEFAULT_USE_REGULAR_NMS,
+			G_PARAM_READWRITE ) );
+
 	// Set sink and src pad capabilities
 	gst_element_class_add_pad_template( gstelement_class, gst_static_pad_template_get( &gst_dgaccelerator_src_template ) );
 	gst_element_class_add_pad_template( gstelement_class, gst_static_pad_template_get( &gst_dgaccelerator_sink_template ) );
@@ -251,9 +387,11 @@ static void gst_dgaccelerator_class_init( GstDgAcceleratorClass *klass )
 		gstelement_class,
 		"DgAccelerator plugin",
 		"DgAccelerator Plugin",
-		"Uses NVIDIA's 3rdparty algorithm wrapper to process video frames",
+		"Runs AI inference on video frames using DeGirum hardware accelerators.",
 		"Stephan Sokolov < stephan@degirum.ai >" );
+
 }
+
 /// \brief Initializes the GstDgAccelerator element and sets the BaseTransform properties for in-place mode.
 ///
 /// This function sets up the GstDgAccelerator instance and configures the underlying BaseTransform
@@ -263,6 +401,7 @@ static void gst_dgaccelerator_class_init( GstDgAcceleratorClass *klass )
 ///
 static void gst_dgaccelerator_init( GstDgAccelerator *dgaccelerator )
 {
+
 	GstBaseTransform *btrans = GST_BASE_TRANSFORM( dgaccelerator );
 	gst_base_transform_set_in_place( GST_BASE_TRANSFORM( btrans ), TRUE );
 	gst_base_transform_set_passthrough( GST_BASE_TRANSFORM( btrans ), TRUE );
@@ -277,12 +416,25 @@ static void gst_dgaccelerator_init( GstDgAccelerator *dgaccelerator )
 	dgaccelerator->cloud_token = const_cast< char * >( DEFAULT_CLOUD_TOKEN );
 	dgaccelerator->box_color = DEFAULT_BOX_COLOR;
 	dgaccelerator->drop_frames = DEFAULT_DROP_FRAMES;
-
+	
+	// Initialize model_params property values
+	dgaccelerator->model_params.measure_time = DEFAULT_MEASURE_TIME;
+	dgaccelerator->model_params.eager_batch_size = DEFAULT_EAGER_BATCH_SIZE;
+	dgaccelerator->model_params.input_raw_data_type = const_cast< char * >( DEFAULT_INPUT_RAW_DATA_TYPE );
+	dgaccelerator->model_params.output_postprocess_type = const_cast< char * >( DEFAULT_OUTPUT_POSTPROCESS_TYPE );
+	dgaccelerator->model_params.output_conf_threshold = DEFAULT_OUTPUT_CONF_THRESHOLD;
+	dgaccelerator->model_params.output_nms_threshold = DEFAULT_OUTPUT_NMS_THRESHOLD;
+	dgaccelerator->model_params.output_top_k = DEFAULT_OUTPUT_TOP_K;
+	dgaccelerator->model_params.max_detections = DEFAULT_MAX_DETECTIONS;
+	dgaccelerator->model_params.max_detections_per_class = DEFAULT_MAX_DETECTIONS_PER_CLASS;
+	dgaccelerator->model_params.max_classes_per_detection = DEFAULT_MAX_CLASSES_PER_DETECTION;
+	dgaccelerator->model_params.use_regular_nms = DEFAULT_USE_REGULAR_NMS;
 	// This quark is required to identify NvDsMeta when iterating through
 	// the buffer metadatas
 	if( !_dsmeta_quark )
 		_dsmeta_quark = g_quark_from_static_string( NVDS_META_STRING );
 }
+
 ///
 /// \brief Sets the value of the specified property for the GstDgAccelerator object
 ///
@@ -350,6 +502,55 @@ static void gst_dgaccelerator_set_property( GObject *object, guint prop_id, cons
 	case PROP_DROP_FRAMES:
 		dgaccelerator->drop_frames = g_value_get_boolean( value );
 		break;
+    case PROP_MEASURE_TIME:
+        dgaccelerator->model_params.measure_time = g_value_get_boolean( value );
+        break;
+    case PROP_EAGER_BATCH_SIZE:
+        dgaccelerator->model_params.eager_batch_size = g_value_get_uint( value );
+        break;
+    case PROP_INPUT_RAW_DATA_TYPE:
+        // Check for string length
+        if( strlen( g_value_get_string( value ) ) + 1 > 128 )
+        {
+            std::cout << "\n\nInput raw data type is too long! Setting it to the default value!\n\n";
+            G_OBJECT_WARN_INVALID_PROPERTY_ID( object, prop_id, pspec );
+            break;
+        }
+        dgaccelerator->model_params.input_raw_data_type = new char[ strlen( g_value_get_string( value ) ) + 1 ];
+        strcpy( dgaccelerator->model_params.input_raw_data_type, g_value_get_string( value ) );
+        break;
+    case PROP_OUTPUT_POSTPROCESS_TYPE:
+        // Check for string length
+        if( strlen( g_value_get_string( value ) ) + 1 > 128 )
+        {
+            std::cout << "\n\nOutput postprocess type is too long! Setting it to the default value!\n\n";
+            G_OBJECT_WARN_INVALID_PROPERTY_ID( object, prop_id, pspec );
+            break;
+        }
+        dgaccelerator->model_params.output_postprocess_type = new char[ strlen( g_value_get_string( value ) ) + 1 ];
+        strcpy( dgaccelerator->model_params.output_postprocess_type, g_value_get_string( value ) );
+        break;
+    case PROP_OUTPUT_CONF_THRESHOLD:
+        dgaccelerator->model_params.output_conf_threshold = g_value_get_double( value );
+        break;
+    case PROP_OUTPUT_NMS_THRESHOLD:
+        dgaccelerator->model_params.output_nms_threshold = g_value_get_double( value );
+        break;
+    case PROP_OUTPUT_TOP_K:
+        dgaccelerator->model_params.output_top_k = g_value_get_uint( value );
+        break;
+    case PROP_MAX_DETECTIONS:
+        dgaccelerator->model_params.max_detections = g_value_get_int( value );
+        break;
+    case PROP_MAX_DETECTIONS_PER_CLASS:
+        dgaccelerator->model_params.max_detections_per_class = g_value_get_int( value );
+        break;
+    case PROP_MAX_CLASSES_PER_DETECTION:
+        dgaccelerator->model_params.max_classes_per_detection = g_value_get_int( value );
+        break;
+    case PROP_USE_REGULAR_NMS:
+        dgaccelerator->model_params.use_regular_nms = g_value_get_boolean( value );
+        break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID( object, prop_id, pspec );
 		break;
@@ -389,7 +590,6 @@ static void gst_dgaccelerator_get_property( GObject *object, guint prop_id, GVal
 	case PROP_BOX_COLOR:
 		g_value_set_enum( value, dgaccelerator->box_color );
 		break;
-
 	case PROP_MODEL_NAME:
 		g_value_set_string( value, dgaccelerator->model_name );
 		break;
@@ -402,6 +602,39 @@ static void gst_dgaccelerator_get_property( GObject *object, guint prop_id, GVal
 	case PROP_DROP_FRAMES:
 		g_value_set_boolean( value, dgaccelerator->drop_frames );
 		break;
+    case PROP_MEASURE_TIME:
+        g_value_set_boolean( value, dgaccelerator->model_params.measure_time );
+        break;
+    case PROP_EAGER_BATCH_SIZE:
+        g_value_set_uint( value, dgaccelerator->model_params.eager_batch_size );
+        break;
+    case PROP_INPUT_RAW_DATA_TYPE:
+        g_value_set_string( value, dgaccelerator->model_params.input_raw_data_type );
+        break;
+    case PROP_OUTPUT_POSTPROCESS_TYPE:
+        g_value_set_string( value, dgaccelerator->model_params.output_postprocess_type );
+        break;
+    case PROP_OUTPUT_CONF_THRESHOLD:
+        g_value_set_double( value, dgaccelerator->model_params.output_conf_threshold );
+        break;
+    case PROP_OUTPUT_NMS_THRESHOLD:
+        g_value_set_double( value, dgaccelerator->model_params.output_nms_threshold );
+        break;
+    case PROP_OUTPUT_TOP_K:
+        g_value_set_uint( value, dgaccelerator->model_params.output_top_k );
+        break;
+    case PROP_MAX_DETECTIONS:
+        g_value_set_int( value, dgaccelerator->model_params.max_detections );
+        break;
+    case PROP_MAX_DETECTIONS_PER_CLASS:
+        g_value_set_int( value, dgaccelerator->model_params.max_detections_per_class );
+        break;
+    case PROP_MAX_CLASSES_PER_DETECTION:
+        g_value_set_int( value, dgaccelerator->model_params.max_classes_per_detection );
+        break;
+    case PROP_USE_REGULAR_NMS:
+        g_value_set_boolean( value, dgaccelerator->model_params.use_regular_nms );
+        break;
 	default:
 		G_OBJECT_WARN_INVALID_PROPERTY_ID( object, prop_id, pspec );
 		break;
@@ -420,12 +653,6 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 	GstDgAccelerator *dgaccelerator = GST_DGACCELERATOR( btrans );
 	// NvBufSurface params for buffer creation
 	NvBufSurfaceCreateParams create_params;
-	// Creates the init params for our context
-	DgAcceleratorInitParams init_params =
-		{ dgaccelerator->processing_width, dgaccelerator->processing_height, "", "", 0, "", dgaccelerator->drop_frames };
-	snprintf( init_params.model_name, 128, "%s", dgaccelerator->model_name );    // Sets the model name
-	snprintf( init_params.server_ip, 128, "%s", dgaccelerator->server_ip );      // Sets the server ip
-	snprintf( init_params.cloud_token, 128, "%s", dgaccelerator->cloud_token );  // Sets the cloud token
 
 	guint batch_size = 1;
 	int val = -1;
@@ -446,11 +673,10 @@ static gboolean gst_dgaccelerator_start( GstBaseTransform *btrans )
 			dgaccelerator->batch_size = batch_size;
 		}
 	}
-	init_params.numInputStreams = batch_size;  // Sets the number of input streams
 	gst_query_unref( queryparams );
 
-	// Initialize our context with the init params structure
-	dgaccelerator->dgacceleratorlib_ctx = DgAcceleratorCtxInit( &init_params );
+	// Initialize our context with the parameters
+	dgaccelerator->dgacceleratorlib_ctx = DgAcceleratorCtxInit( dgaccelerator );
 
 	CHECK_CUDA_STATUS( cudaStreamCreate( &dgaccelerator->cuda_stream ), "Could not create cuda stream" );
 
