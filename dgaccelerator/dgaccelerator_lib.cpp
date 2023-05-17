@@ -284,7 +284,7 @@ DgAcceleratorCtx *DgAcceleratorCtxInit( GstDgAccelerator *dgaccelerator )
 ///
 void parseOutput( const json &response, const unsigned int &index, std::vector< DgAcceleratorOutput * > out, DgAcceleratorCtx *ctx )
 {
-	if( response.dump() == "[]" )
+	if( response.empty() )
 		return;  // empty frame: no inference results
 
 	// Check for which model type we are using, based on the json.
